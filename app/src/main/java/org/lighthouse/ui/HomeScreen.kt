@@ -90,6 +90,15 @@ fun HomeScreen(
     onChooseFolder: (String) -> Unit,
     onImport: () -> Unit,
     onLaunch: (SystemPage, DisplayGame) -> Unit,
+    // Every on-screen control is also a touch target. The hints are not a
+    // legend for the pad - they are buttons that happen to show which pad
+    // button does the same thing.
+    onSelect: (Int) -> Unit,
+    onPrevSystem: () -> Unit,
+    onNextSystem: () -> Unit,
+    onPickSystem: (Int) -> Unit,
+    onSettings: () -> Unit,
+    onApps: () -> Unit,
 ) {
     val theme = LocalTheme.current
     val page = pages.getOrNull(systemIndex)
@@ -105,7 +114,7 @@ fun HomeScreen(
         AmbientGlow(selected)
 
         Column(Modifier.fillMaxSize()) {
-            SystemTabs(pages, systemIndex)
+            SystemTabs(pages, systemIndex, onPrevSystem, onNextSystem, onPickSystem)
 
             Box(Modifier.weight(1f)) {
                 when {
@@ -114,7 +123,11 @@ fun HomeScreen(
                     page.games.isEmpty() -> ProblemPane(page, onChooseFolder)
                     else -> {
                         val anyPlayable = page.games.any { it.playable }
-                        CoverGrid(page, cursor, perTileBadges = anyPlayable) { g -> onLaunch(page, g) }
+                        CoverGrid(
+                            page, cursor, perTileBadges = anyPlayable,
+                            onSelect = onSelect,
+                            onLaunch = { g -> onLaunch(page, g) },
+                        )
                     }
                 }
             }
@@ -127,7 +140,13 @@ fun HomeScreen(
                     ) { onChooseFolder(p.profile.id) }
                 }
             }
-            BottomBar(selected, onImport)
+            BottomBar(
+                selected = selected,
+                onImport = onImport,
+                onApps = onApps,
+                onSettings = onSettings,
+                onPlay = { if (page != null && selected != null) onLaunch(page, selected) },
+            )
         }
     }
 }
@@ -157,7 +176,13 @@ private fun AmbientGlow(selected: DisplayGame?) {
 }
 
 @Composable
-private fun SystemTabs(pages: List<SystemPage>, systemIndex: Int) {
+private fun SystemTabs(
+    pages: List<SystemPage>,
+    systemIndex: Int,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onPick: (Int) -> Unit,
+) {
     val theme = LocalTheme.current
     val tabState = androidx.compose.foundation.lazy.rememberLazyListState()
     // With 15 systems the row overflows; without this the selected tab can sit
@@ -173,7 +198,7 @@ private fun SystemTabs(pages: List<SystemPage>, systemIndex: Int) {
             .padding(horizontal = 20.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BumperChip("L1")
+        BumperChip("L1", onPrev)
         Spacer(Modifier.width(12.dp))
 
         LazyRow(
@@ -190,6 +215,7 @@ private fun SystemTabs(pages: List<SystemPage>, systemIndex: Int) {
                     Modifier
                         .clip(RoundedCornerShape(20.dp))
                         .background(if (on) theme.textPrimary.copy(alpha = 0.22f) else Color.Transparent)
+                        .clickable { onPick(i) }
                         .padding(horizontal = 16.dp, vertical = 7.dp)
                 ) {
                     Text(
@@ -202,18 +228,19 @@ private fun SystemTabs(pages: List<SystemPage>, systemIndex: Int) {
             }
         }
         Spacer(Modifier.width(12.dp))
-        BumperChip("R1")
+        BumperChip("R1", onNext)
     }
 }
 
 @Composable
-private fun BumperChip(label: String) {
+private fun BumperChip(label: String, onClick: () -> Unit) {
     val theme = LocalTheme.current
     Box(
         Modifier
             .size(34.dp)
             .clip(CircleShape)
-            .background(theme.textPrimary.copy(alpha = 0.92f)),
+            .background(theme.textPrimary.copy(alpha = 0.92f))
+            .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(label, color = theme.background, fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -225,6 +252,7 @@ private fun CoverGrid(
     page: SystemPage,
     cursor: GridCursor,
     perTileBadges: Boolean,
+    onSelect: (Int) -> Unit,
     onLaunch: (DisplayGame) -> Unit,
 ) {
     val state = rememberLazyGridState()
@@ -250,7 +278,13 @@ private fun CoverGrid(
         val aspect = aspectOf(page.profile.aspectRatio)
         itemsIndexed(page.games) { i, g ->
             CoverTile(g, focused = i == cursor.index, showBadge = perTileBadges,
-                aspect = aspect) { onLaunch(g) }
+                aspect = aspect) {
+                // First tap selects, a second tap on the selected tile plays.
+                // A single tap launching makes a mis-tap boot a game, and it
+                // leaves touch users with no way to build the selection that
+                // the "A Play" button acts on.
+                if (i == cursor.index) onLaunch(g) else onSelect(i)
+            }
         }
     }
 }
@@ -437,7 +471,13 @@ private fun SystemNotice(text: String, onFix: () -> Unit) {
 }
 
 @Composable
-private fun BottomBar(selected: DisplayGame?, onImport: () -> Unit) {
+private fun BottomBar(
+    selected: DisplayGame?,
+    onImport: () -> Unit,
+    onApps: () -> Unit,
+    onSettings: () -> Unit,
+    onPlay: () -> Unit,
+) {
     val theme = LocalTheme.current
     Row(
         Modifier
@@ -446,9 +486,9 @@ private fun BottomBar(selected: DisplayGame?, onImport: () -> Unit) {
             .padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Hint("B", "Apps")
+        Hint("B", "Apps", onClick = onApps)
         Spacer(Modifier.width(22.dp))
-        Hint("Y", "Set up folders")
+        Hint("Y", "Settings", onClick = onSettings)
         Spacer(Modifier.width(22.dp))
         Box(Modifier.clickable(onClick = onImport)) {
             Text("Import", color = theme.textSecondary, fontSize = 15.sp)
@@ -462,14 +502,26 @@ private fun BottomBar(selected: DisplayGame?, onImport: () -> Unit) {
             !selected.playable -> "Needs folder access"
             else -> "Play"
         }
-        Hint("A", label, dim = selected?.playable != true)
+        Hint("A", label, dim = selected?.playable != true, onClick = onPlay)
     }
 }
 
 @Composable
-private fun Hint(button: String, label: String, dim: Boolean = false) {
+private fun Hint(
+    button: String,
+    label: String,
+    dim: Boolean = false,
+    onClick: (() -> Unit)? = null,
+) {
     val theme = LocalTheme.current
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = if (onClick != null) Modifier
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 6.dp, vertical = 4.dp)
+        else Modifier,
+    ) {
         Box(
             Modifier
                 .size(28.dp)

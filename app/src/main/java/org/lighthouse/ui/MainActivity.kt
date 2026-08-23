@@ -107,6 +107,15 @@ class MainActivity : ComponentActivity() {
                         onChooseFolder = ::chooseFolder,
                         onImport = ::runImport,
                         onLaunch = ::launch,
+                        onSelect = { i -> cursor = cursor.copy(index = i) },
+                        onPrevSystem = { handle(Nav.PREV_SYSTEM) },
+                        onNextSystem = { handle(Nav.NEXT_SYSTEM) },
+                        onPickSystem = { i ->
+                            systemIndex = i.coerceIn(0, (pages.size - 1).coerceAtLeast(0))
+                            cursor = cursor.copy(index = 0)
+                        },
+                        onSettings = { showSettings = true },
+                        onApps = { toast("Apps screen is not built yet") },
                     )
                 }
             }
