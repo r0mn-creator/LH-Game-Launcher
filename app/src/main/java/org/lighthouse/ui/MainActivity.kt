@@ -41,6 +41,15 @@ class MainActivity : ComponentActivity() {
     private var systemIndex by mutableIntStateOf(0)
     private var cursor by mutableStateOf(GridCursor())
     private var pendingFolderFor: String? = null
+    /**
+     * Systems still waiting for a folder, walked one picker at a time.
+     *
+     * After a Beacon import every system needs its folder re-granted (a SAF
+     * grant belongs to the app that asked for it), so making the user find each
+     * one separately would be eleven trips through the UI for a single task.
+     */
+    private var setupQueue: List<String> = emptyList()
+    private var setupTotal = 0
 
     private val app get() = LightHouseApp.instance
 
@@ -58,8 +67,9 @@ class MainActivity : ComponentActivity() {
         }
         if (FolderPicker.accept(this, app.profiles, profile, tree) == null) {
             toast("Could not keep access to that folder")
+            setupQueue = emptyList()
         } else {
-            reload()
+            advanceSetup(justGranted = profile)
         }
     }
 
@@ -196,16 +206,75 @@ class MainActivity : ComponentActivity() {
                 }
             }
             Nav.BACK -> Unit          // a launcher has nowhere to go back to
-            Nav.MENU -> toast("Settings are not built yet")
+            Nav.MENU -> startSetup()
             Nav.SEARCH -> toast("Search is not built yet")
         }
     }
 
     // ---- actions ------------------------------------------------------------
 
+    /**
+     * Start walking every system that has no folder yet.
+     */
+    private fun startSetup() {
+        val needing = pages
+            .filter { it.profile.source.provider == org.lighthouse.data.SourceSpec.FOLDER }
+            .filter { FolderPicker.needsFolder(this, it.profile.source.roots) }
+            .map { it.profile.id }
+        if (needing.isEmpty()) {
+            toast("Every system already has a folder")
+            return
+        }
+        // Systems whose folder we already know go first: those are a single tap
+        // because the picker can be opened straight at the folder.
+        setupQueue = needing.sortedBy { id ->
+            val roots = pages.firstOrNull { it.profile.id == id }?.profile?.source?.roots
+            if (roots.isNullOrEmpty()) 1 else 0
+        }
+        setupTotal = needing.size
+        android.util.Log.i("LH.Setup", "queue=" + setupQueue.joinToString())
+        nextInSetup()
+    }
+
+    private fun nextInSetup() {
+        val id = setupQueue.firstOrNull()
+        if (id == null) {
+            // Report against the library, not against the pickers: what matters
+            // is how many games actually became playable, which is the thing the
+            // name-matching in LibraryMerge is responsible for.
+            reload()
+            lifecycleScope.launch {
+                kotlinx.coroutines.delay(400)
+                val playable = pages.sumOf { p -> p.games.count { it.playable } }
+                val total = pages.sumOf { it.games.size }
+                toast("Setup done — $playable of $total games are now playable")
+            }
+            return
+        }
+        val name = pages.firstOrNull { it.profile.id == id }?.profile?.name ?: id
+        val step = setupTotal - setupQueue.size + 1
+        toast("Folder $step of $setupTotal — pick the folder for $name")
+        chooseFolder(id)
+    }
+
+    private fun advanceSetup(justGranted: PlatformProfile) {
+        if (setupQueue.isEmpty()) { reload(); return }
+        setupQueue = setupQueue.drop(1)
+        // Rebuild first so the next step sees the grant we just took.
+        lifecycleScope.launch {
+            val built = withContext(Dispatchers.IO) { buildPages() }
+            pages = built
+            nextInSetup()
+        }
+    }
+
     private fun chooseFolder(platformId: String) {
         pendingFolderFor = platformId
-        folderPicker.launch(FolderPicker.intent())
+        // Open the picker at the folder we already know about, when we know one.
+        val known = pages.firstOrNull { it.profile.id == platformId }
+            ?.profile?.source?.roots?.firstOrNull()
+            ?.let { runCatching { Uri.parse(it) }.getOrNull() }
+        folderPicker.launch(FolderPicker.intent(known))
     }
 
     private fun runImport() {

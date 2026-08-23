@@ -18,13 +18,50 @@ import org.lighthouse.data.ProfileStore
  */
 object FolderPicker {
 
-    fun intent(): Intent =
+    /**
+     * @param initial a tree URI to open the picker AT.
+     *
+     * After a Beacon import we already know the exact folder for every system -
+     * the URI is right, only the grant is missing. Seeding EXTRA_INITIAL_URI
+     * turns re-granting into one tap per system instead of navigating to the SD
+     * card and hunting for the folder eleven times. Without it the picker opens
+     * at internal storage root, which Android refuses to grant at all.
+     */
+    fun intent(initial: Uri? = null): Intent =
         Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or
                     Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
             )
+            if (initial != null && android.os.Build.VERSION.SDK_INT >= 26) {
+                // EXTRA_INITIAL_URI wants a DOCUMENT uri; handing it the tree uri
+                // is silently ignored and the picker opens at internal storage
+                // root, which Android then refuses to grant at all.
+                val doc = runCatching {
+                    android.provider.DocumentsContract.buildDocumentUriUsingTree(
+                        initial,
+                        android.provider.DocumentsContract.getTreeDocumentId(initial),
+                    )
+                }.getOrNull() ?: initial
+                putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, doc)
+            }
         }
+
+    /**
+     * A folder source needs attention when it has no roots at all, or when none
+     * of its roots is currently readable. The second case is the normal state
+     * after an import: SAF grants belong to the app that asked for them, so
+     * Beacon's URIs are valid but unusable until LightHouse takes its own.
+     */
+    fun needsFolder(context: Context, roots: List<String>): Boolean {
+        if (roots.isEmpty()) return true
+        return roots.none { r ->
+            runCatching {
+                androidx.documentfile.provider.DocumentFile
+                    .fromTreeUri(context, Uri.parse(r))?.canRead() == true
+            }.getOrDefault(false)
+        }
+    }
 
     /**
      * Persist the grant and add the tree to a profile.

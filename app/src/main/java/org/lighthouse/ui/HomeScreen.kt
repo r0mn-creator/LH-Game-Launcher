@@ -400,7 +400,7 @@ private fun BottomBar(selected: DisplayGame?, onImport: () -> Unit) {
     ) {
         Hint("B", "Apps")
         Spacer(Modifier.width(22.dp))
-        Hint("Y", "Settings")
+        Hint("Y", "Set up folders")
         Spacer(Modifier.width(22.dp))
         Box(Modifier.clickable(onClick = onImport)) {
             Text("Import", color = theme.textSecondary, fontSize = 15.sp)
