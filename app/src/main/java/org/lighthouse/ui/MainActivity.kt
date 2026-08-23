@@ -57,6 +57,8 @@ class MainActivity : ComponentActivity() {
     /** Bumped when the palette changes, to force a recompose. */
     private var colorEpoch by mutableIntStateOf(0)
     private var showAppPicker by mutableStateOf(false)
+    /** Non-null while a long job runs; the text is what the user sees. */
+    private var busy by mutableStateOf<String?>(null)
     /** Platform whose launch intent is being edited, and the working copy. */
     private var editingId by mutableStateOf<String?>(null)
     private var editingSpec by mutableStateOf<org.lighthouse.data.LaunchSpec?>(null)
@@ -121,6 +123,7 @@ class MainActivity : ComponentActivity() {
             // immediately rather than after a restart.
             val theme = remember(colorEpoch) { app.activeColors() }
             CompositionLocalProvider(LocalTheme provides theme) {
+              Box(Modifier.fillMaxSize()) {
                 val ed = editingId
                 val vf = verifyFor
                 if (vf != null) {
@@ -209,6 +212,8 @@ class MainActivity : ComponentActivity() {
                         onApps = { toast("Apps screen is not built yet") },
                     )
                 }
+                busy?.let { BusyOverlay(it) }
+              }
             }
         }
         restorePending()
@@ -524,6 +529,57 @@ class MainActivity : ComponentActivity() {
         toast("Forgot $removed record(s) with no game on disk")
     }
 
+    /**
+     * Fetch box art for everything that has none.
+     *
+     * Runs off the main thread and reports progress: this walks a 1.7 MB index
+     * per platform and then one download per game, so a silent freeze would be
+     * indistinguishable from a hang.
+     */
+    private fun scrapeCovers() {
+        if (busy != null) return
+        val targets = pages.flatMap { pg ->
+            pg.games
+                .filter { it.coverPath == null && (it.entry != null || it.record != null) }
+                .map { g ->
+                    org.lighthouse.scrape.CoverScraper.Target(
+                        key = g.record?.key ?: g.entry?.key ?: g.title,
+                        platformId = pg.profile.id,
+                        platformName = pg.profile.name,
+                        title = g.title,
+                    )
+                }
+        }
+        if (targets.isEmpty()) { toast("Every game already has box art"); return }
+
+        busy = "Looking for box art for ${targets.size} game(s)…"
+        lifecycleScope.launch {
+            val report = withContext(Dispatchers.IO) {
+                org.lighthouse.scrape.CoverScraper.scrape(
+                    targets, app.library.mediaDir
+                ) { step -> runOnUiThread { busy = step } }
+            }
+            // Attach what came back. A scanned game with no record yet gets one,
+            // which is the only way Xbox and Xbox 360 art can be kept at all -
+            // those platforms came from a folder scan, not from the import.
+            val byKey = targets.associateBy { it.key }
+            val updates = report.found.mapNotNull { f ->
+                val t = byKey[f.key] ?: return@mapNotNull null
+                val existing = app.library.all().firstOrNull { it.key == f.key }
+                (existing ?: org.lighthouse.data.GameRecord(
+                    key = f.key,
+                    platformId = t.platformId,
+                    title = t.title,
+                    uri = f.key.takeIf { it.startsWith("content://") },
+                )).copy(coverPath = f.file.absolutePath)
+            }
+            if (updates.isNotEmpty()) app.library.put(updates)
+            busy = null
+            reload()
+            toast(report.summary() + report.notes.firstOrNull()?.let { " — $it" }.orEmpty())
+        }
+    }
+
     private fun runImport() {
         lifecycleScope.launch {
             val r = withContext(Dispatchers.IO) { ImportSource.run(this@MainActivity) }
@@ -640,6 +696,7 @@ class MainActivity : ComponentActivity() {
         override fun setupFolders() { showSettings = false; startSetup() }
         override fun rescan() { reload(); toast("Rescanning…") }
         override fun cleanupLibrary() = this@MainActivity.cleanupLibrary()
+        override fun scrapeCovers() = this@MainActivity.scrapeCovers()
         override fun chooseFolder(platformId: String) {
             showSettings = false
             this@MainActivity.chooseFolder(platformId)
@@ -703,6 +760,9 @@ class MainActivity : ComponentActivity() {
             gamesPlayable = pages.sumOf { pg -> pg.games.count { it.playable } },
             problems = loaded.problems,
             cleanupPlan = cleanupPlan(),
+            missingArt = pages.sumOf { pg ->
+                pg.games.count { it.coverPath == null && (it.entry != null || it.record != null) }
+            },
         )
     }
 

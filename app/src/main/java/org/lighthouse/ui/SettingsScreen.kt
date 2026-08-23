@@ -16,6 +16,7 @@ data class SettingsState(
     val gamesPlayable: Int,
     val problems: Map<String, String>,
     val cleanupPlan: CleanupPlan,
+    val missingArt: Int,
 )
 
 /**

@@ -19,6 +19,7 @@ class MenuTree(
         fun setupFolders()
         fun rescan()
         fun cleanupLibrary()
+        fun scrapeCovers()
         fun chooseFolder(platformId: String)
         fun chooseApps()
         fun editIntent(platformId: String)
@@ -88,6 +89,10 @@ class MenuTree(
                 "Walks every system that still needs access") { actions.setupFolders() },
             MenuItem.Action("Rescan now",
                 "Re-read every folder") { actions.rescan() },
+            MenuItem.Action("Get missing box art",
+                if (state.missingArt == 0) "Every game already has a cover"
+                else "${state.missingArt} game(s) have none · fetches from libretro",
+                enabled = state.missingArt > 0) { actions.scrapeCovers() },
             MenuItem.Submenu("cleanup", "Forget missing games",
                 if (state.cleanupPlan.total == 0)
                     "Nothing to forget — every record has a game"
