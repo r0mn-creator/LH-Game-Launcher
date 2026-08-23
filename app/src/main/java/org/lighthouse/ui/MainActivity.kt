@@ -28,7 +28,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import org.lighthouse.LightHouseApp
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import java.io.File
+import org.lighthouse.core.DisplayGame
 import org.lighthouse.core.LaunchIntentBuilder
+import org.lighthouse.core.LibraryMerge
 import org.lighthouse.data.PlatformProfile
 import org.lighthouse.provider.Discovery
 import org.lighthouse.provider.GameEntry
@@ -54,6 +59,7 @@ class MainActivity : ComponentActivity() {
 private data class Section(
     val profile: PlatformProfile,
     val discovery: Discovery,
+    val games: List<DisplayGame>,
 )
 
 @Composable
@@ -71,7 +77,10 @@ private fun HomeScreen() {
         problems = loaded.problems
         sections = loaded.profiles
             .filter { it.enabled }
-            .map { Section(it, Providers.discover(ctx, it)) }
+            .map { p ->
+                val d = Providers.discover(ctx, p)
+                Section(p, d, LibraryMerge.merge(d.games, app.library.forPlatform(p.id)))
+            }
     }
 
     // A profile rejected for having no folder is not a dead end: offer the
@@ -101,12 +110,31 @@ private fun HomeScreen() {
             .padding(horizontal = 20.dp)
     ) {
         Spacer(Modifier.height(28.dp))
-        Text(
-            "LightHouse",
-            color = theme.textPrimary,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Bold,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "LightHouse",
+                color = theme.textPrimary,
+                fontSize = 26.sp,
+                fontWeight = FontWeight.Bold,
+            )
+            Spacer(Modifier.weight(1f))
+            Text(
+                "Import from Beacon",
+                color = theme.primary,
+                fontSize = 14.sp,
+                modifier = Modifier
+                    .border(1.dp, theme.outline, RoundedCornerShape(8.dp))
+                    .clickable {
+                        val r = ImportSource.run(ctx)
+                        // Always report what happened - matched, added, skipped -
+                        // rather than silently merging hundreds of rows.
+                        toast(ctx, r.summary())
+                        r.notes.take(3).forEach { n -> toast(ctx, n) }
+                        reload++
+                    }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            )
+        }
         Spacer(Modifier.height(16.dp))
 
         // A profile that failed to load is shown, never silently dropped: an
@@ -156,7 +184,7 @@ private fun PlatformRow(section: Section) {
             )
             Spacer(Modifier.width(10.dp))
             Text(
-                "${section.discovery.games.size}",
+                "${section.games.size}",
                 color = theme.textSecondary,
                 fontSize = 14.sp,
             )
@@ -169,14 +197,23 @@ private fun PlatformRow(section: Section) {
         }
         Spacer(Modifier.height(10.dp))
 
-        if (section.discovery.games.isEmpty()) {
+        if (section.games.isEmpty()) {
             section.discovery.notes.forEach {
                 Text(it, color = theme.textSecondary, fontSize = 13.sp)
             }
         } else {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(section.discovery.games) { g ->
-                    GameCard(g) { launch(ctx, section.profile, g, theme) }
+                items(section.games) { g ->
+                    GameCard(g) {
+                        val e = g.entry
+                        if (e == null) {
+                            // Imported but the file is not reachable yet. Say
+                            // exactly why rather than doing nothing on tap.
+                            toast(ctx, "\"${'$'}{g.title}\" needs its folder re-granted in LightHouse")
+                        } else {
+                            launch(ctx, section.profile, e, theme)
+                        }
+                    }
                 }
             }
         }
@@ -184,7 +221,7 @@ private fun PlatformRow(section: Section) {
 }
 
 @Composable
-private fun GameCard(game: GameEntry, onClick: () -> Unit) {
+private fun GameCard(game: DisplayGame, onClick: () -> Unit) {
     val theme = LocalTheme.current
     Column(
         Modifier
@@ -198,12 +235,31 @@ private fun GameCard(game: GameEntry, onClick: () -> Unit) {
                 .background(theme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                game.title.take(2).uppercase(),
-                color = theme.textSecondary,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-            )
+            val cover = game.coverPath?.let { File(it) }?.takeIf { it.isFile }
+            if (cover != null) {
+                AsyncImage(
+                    model = cover,
+                    contentDescription = game.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Text(
+                    game.title.take(2).uppercase(),
+                    color = theme.textSecondary,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            if (!game.playable) {
+                // Present but not launchable - visibly distinct, never a silent
+                // no-op when tapped.
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(theme.background.copy(alpha = 0.6f))
+                )
+            }
         }
         Spacer(Modifier.height(6.dp))
         Text(

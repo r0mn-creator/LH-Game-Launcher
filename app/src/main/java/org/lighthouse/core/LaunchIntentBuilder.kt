@@ -35,6 +35,15 @@ object LaunchIntentBuilder {
         val intent = Intent(spec.action)
 
         spec.component?.takeIf { it.isNotBlank() }?.let { c ->
+            if (!c.contains('/')) {
+                // Bare package: constrain the intent to this app and let Android
+                // choose the activity that declares a matching filter. This is
+                // what makes an imported Beacon platform work at all - Beacon
+                // records only a package - and it is more robust than pinning an
+                // activity name that may be renamed in the next release.
+                intent.setPackage(c)
+                return@let
+            }
             val pkg = c.substringBefore('/')
             var cls = c.substringAfter('/')
             if (cls.startsWith('.')) cls = pkg + cls

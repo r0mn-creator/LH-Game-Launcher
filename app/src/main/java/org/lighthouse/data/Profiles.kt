@@ -149,9 +149,17 @@ fun PlatformProfile.validate(): ProfileCheck {
         return ProfileCheck.Invalid("rom_mode 'extra' needs 'rom_extra' naming the extra")
     }
     if (launch.action.isBlank()) return ProfileCheck.Invalid("launch action is blank")
+    // A bare package (no '/') is legitimate and often preferable: with
+    // ACTION_VIEW + a content URI, Android resolves to whichever activity in
+    // that app actually declares a matching filter. Beacon only ever stored a
+    // package, so requiring package/activity would reject every imported
+    // platform - which it did, on the first real import.
     launch.component?.let {
-        if (it.isNotBlank() && !it.contains('/')) {
-            return ProfileCheck.Invalid("component '$it' must be 'package/activity'")
+        if (it.isNotBlank() && it.count { c -> c == '/' } > 1) {
+            return ProfileCheck.Invalid("component '$it' has too many '/'")
+        }
+        if (it.endsWith("/")) {
+            return ProfileCheck.Invalid("component '$it' has no activity after '/'")
         }
     }
     for (e in launch.extras) {

@@ -1,6 +1,7 @@
 package org.lighthouse
 
 import android.app.Application
+import org.lighthouse.data.LibraryStore
 import org.lighthouse.data.ProfileStore
 import org.lighthouse.theme.ThemeStore
 
@@ -10,11 +11,14 @@ class LightHouseApp : Application() {
         private set
     lateinit var themes: ThemeStore
         private set
+    lateinit var library: LibraryStore
+        private set
 
     override fun onCreate() {
         super.onCreate()
         profiles = ProfileStore(this)
         themes = ThemeStore(this)
+        library = LibraryStore(this)
         // Extract bundled presets on first run and after an update. Neither call
         // ever overwrites an existing file, so a user's edited Xbox profile or
         // hand-tuned theme survives every update.
