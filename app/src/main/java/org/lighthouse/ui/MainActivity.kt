@@ -2,320 +2,246 @@ package org.lighthouse.ui
 
 import android.content.Context
 import android.content.pm.LauncherApps
+import android.net.Uri
 import android.os.Bundle
 import android.os.Process
+import android.view.KeyEvent
+import android.view.MotionEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.border
-import androidx.compose.material3.Text
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.lighthouse.LightHouseApp
-import androidx.compose.ui.layout.ContentScale
-import coil.compose.AsyncImage
-import java.io.File
 import org.lighthouse.core.DisplayGame
 import org.lighthouse.core.LaunchIntentBuilder
 import org.lighthouse.core.LibraryMerge
 import org.lighthouse.data.PlatformProfile
-import org.lighthouse.provider.Discovery
-import org.lighthouse.provider.GameEntry
 import org.lighthouse.provider.Providers
 import org.lighthouse.theme.LocalTheme
-import org.lighthouse.theme.ResolvedTheme
 
+/**
+ * The launcher.
+ *
+ * Driven with a pad: bumpers page through systems, d-pad/left stick move the
+ * cursor, A launches. Focus is an explicit index (see GamepadNav) rather than
+ * Compose focus, so the selection behaves like a console UI instead of a
+ * scrollable list.
+ */
 class MainActivity : ComponentActivity() {
+
+    private var pages by mutableStateOf<List<SystemPage>>(emptyList())
+    private var systemIndex by mutableIntStateOf(0)
+    private var cursor by mutableStateOf(GridCursor())
+    private var pendingFolderFor: String? = null
+
+    private val app get() = LightHouseApp.instance
+
+    private val folderPicker = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val tree: Uri? = result.data?.data
+        val id = pendingFolderFor
+        pendingFolderFor = null
+        if (tree == null || id == null) return@registerForActivityResult
+        val profile = loadProfileById(id)
+        if (profile == null) {
+            toast("Could not find that platform")
+            return@registerForActivityResult
+        }
+        if (FolderPicker.accept(this, app.profiles, profile, tree) == null) {
+            toast("Could not keep access to that folder")
+        } else {
+            reload()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        immersive()
         setContent {
-            val app = LightHouseApp.instance
-            var theme by remember { mutableStateOf(app.themes.active()) }
+            val theme by remember { mutableStateOf(app.themes.active()) }
             CompositionLocalProvider(LocalTheme provides theme) {
-                HomeScreen()
+                HomeScreen(
+                    pages = pages,
+                    systemIndex = systemIndex,
+                    cursor = cursor,
+                    onChooseFolder = ::chooseFolder,
+                    onImport = ::runImport,
+                    onLaunch = ::launch,
+                )
             }
         }
+        reload()
     }
-}
 
-private data class Section(
-    val profile: PlatformProfile,
-    val discovery: Discovery,
-    val games: List<DisplayGame>,
-)
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) immersive()
+    }
 
-@Composable
-private fun HomeScreen() {
-    val ctx = LocalContext.current
-    val theme = LocalTheme.current
-    val app = LightHouseApp.instance
+    /** Full screen: a launcher owns the display. */
+    private fun immersive() {
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
 
-    var sections by remember { mutableStateOf<List<Section>>(emptyList()) }
-    var problems by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
-    var reload by remember { mutableIntStateOf(0) }
+    // ---- data ---------------------------------------------------------------
 
-    LaunchedEffect(reload) {
+    private fun reload() {
+        lifecycleScope.launch {
+            val built = withContext(Dispatchers.IO) { buildPages() }
+            pages = built
+            systemIndex = systemIndex.coerceIn(0, (built.size - 1).coerceAtLeast(0))
+            cursor = cursor.copy(index = 0)
+        }
+    }
+
+    /**
+     * Every profile becomes a page, including broken ones. A platform that fails
+     * validation is shown with its reason rather than disappearing - an absent
+     * system looks identical to one that was never configured.
+     */
+    private fun buildPages(): List<SystemPage> {
         val loaded = app.profiles.load()
-        problems = loaded.problems
-        sections = loaded.profiles
-            .filter { it.enabled }
-            .map { p ->
-                val d = Providers.discover(ctx, p)
-                Section(p, d, LibraryMerge.merge(d.games, app.library.forPlatform(p.id)))
+        val out = mutableListOf<SystemPage>()
+
+        for (p in loaded.profiles.filter { it.enabled }) {
+            val d = Providers.discover(this, p)
+            val games = LibraryMerge.merge(d.games, app.library.forPlatform(p.id))
+            out += SystemPage(p, games, d.notes)
+        }
+        for ((which, why) in loaded.problems) {
+            val p = loadProfileById(which.removeSuffix(".json"))
+            if (p != null) {
+                // Imported games still belong to this system even while the
+                // profile is unusable, so the page is never mysteriously empty.
+                val games = LibraryMerge.merge(emptyList(), app.library.forPlatform(p.id))
+                out += SystemPage(p, games, emptyList(), why)
             }
+        }
+        return out.sortedBy { it.profile.order }
     }
 
-    // A profile rejected for having no folder is not a dead end: offer the
-    // picker right where the problem is reported.
-    var pickFor by remember { mutableStateOf<String?>(null) }
-    val picker = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        val tree = result.data?.data
-        val id = pickFor
-        if (tree != null && id != null) {
-            val all = app.profiles.load()
-            val prof = all.profiles.firstOrNull { it.id == id }
-                ?: rejectedProfile(app, id)
-            if (prof != null) {
-                if (FolderPicker.accept(ctx, app.profiles, prof, tree) != null) reload++
-                else toast(ctx, "Could not keep access to that folder")
-            }
-        }
-        pickFor = null
-    }
-
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(theme.background)
-            .padding(horizontal = 20.dp)
-    ) {
-        Spacer(Modifier.height(28.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                "LightHouse",
-                color = theme.textPrimary,
-                fontSize = 26.sp,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(Modifier.weight(1f))
-            Text(
-                "Import from Beacon",
-                color = theme.primary,
-                fontSize = 14.sp,
-                modifier = Modifier
-                    .border(1.dp, theme.outline, RoundedCornerShape(8.dp))
-                    .clickable {
-                        val r = ImportSource.run(ctx)
-                        // Always report what happened - matched, added, skipped -
-                        // rather than silently merging hundreds of rows.
-                        toast(ctx, r.summary())
-                        r.notes.take(3).forEach { n -> toast(ctx, n) }
-                        reload++
-                    }
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-            )
-        }
-        Spacer(Modifier.height(16.dp))
-
-        // A profile that failed to load is shown, never silently dropped: an
-        // invisible platform looks identical to one that was never created.
-        if (problems.isNotEmpty()) {
-            problems.forEach { (which, why) ->
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(bottom = 6.dp),
-                ) {
-                    Text("⚠ $which — $why", color = theme.error, fontSize = 13.sp)
-                    if (why.contains("no roots")) {
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            "Choose folder…",
-                            color = theme.primary,
-                            fontSize = 13.sp,
-                            modifier = Modifier
-                                .border(1.dp, theme.outline, RoundedCornerShape(6.dp))
-                                .clickable { pickFor = which; picker.launch(FolderPicker.intent()) }
-                                .padding(horizontal = 10.dp, vertical = 4.dp),
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
-        }
-
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(22.dp)) {
-            items(sections) { section -> PlatformRow(section) }
-        }
-    }
-}
-
-@Composable
-private fun PlatformRow(section: Section) {
-    val theme = LocalTheme.current
-    val ctx = LocalContext.current
-
-    Column {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                section.profile.name,
-                color = theme.textPrimary,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
-            Spacer(Modifier.width(10.dp))
-            Text(
-                "${section.games.size}",
-                color = theme.textSecondary,
-                fontSize = 14.sp,
-            )
-            if (!section.profile.verified) {
-                Spacer(Modifier.width(10.dp))
-                // Honest by default: a preset read from source but never run on
-                // a real game says so, rather than implying it works.
-                Text("untested", color = theme.secondary, fontSize = 12.sp)
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-
-        if (section.games.isEmpty()) {
-            section.discovery.notes.forEach {
-                Text(it, color = theme.textSecondary, fontSize = 13.sp)
-            }
-        } else {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                items(section.games) { g ->
-                    GameCard(g) {
-                        val e = g.entry
-                        if (e == null) {
-                            // Imported but the file is not reachable yet. Say
-                            // exactly why rather than doing nothing on tap.
-                            toast(ctx, "\"${'$'}{g.title}\" needs its folder re-granted in LightHouse")
-                        } else {
-                            launch(ctx, section.profile, e, theme)
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun GameCard(game: DisplayGame, onClick: () -> Unit) {
-    val theme = LocalTheme.current
-    Column(
-        Modifier
-            .width(120.dp)
-            .clickable(onClick = onClick)
-    ) {
-        Box(
-            Modifier
-                .size(width = 120.dp, height = 160.dp)
-                .clip(RoundedCornerShape(theme.file.shape.cornerRadius.dp))
-                .background(theme.surfaceVariant),
-            contentAlignment = Alignment.Center,
-        ) {
-            val cover = game.coverPath?.let { File(it) }?.takeIf { it.isFile }
-            if (cover != null) {
-                AsyncImage(
-                    model = cover,
-                    contentDescription = game.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            } else {
-                Text(
-                    game.title.take(2).uppercase(),
-                    color = theme.textSecondary,
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
-            if (!game.playable) {
-                // Present but not launchable - visibly distinct, never a silent
-                // no-op when tapped.
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .background(theme.background.copy(alpha = 0.6f))
-                )
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            game.title,
-            color = theme.textPrimary,
-            fontSize = 12.sp,
-            maxLines = 2,
-        )
-    }
-}
-
-/**
- * Launch a game. Two routes: a built intent from the profile, or - for the
- * shortcut passthrough - LauncherApps.startShortcut.
- *
- * Every failure is reported to the user with a reason. A launcher that fails
- * silently is exactly what this project exists to replace.
- */
-private fun launch(ctx: Context, profile: PlatformProfile, game: GameEntry, theme: ResolvedTheme) {
-    if (game.shortcutId != null && game.shortcutPackage != null) {
-        val la = ctx.getSystemService(Context.LAUNCHER_APPS_SERVICE) as? LauncherApps
-        if (la == null) {
-            toast(ctx, "Shortcuts unavailable on this device")
-            return
-        }
-        runCatching {
-            la.startShortcut(
-                game.shortcutPackage, game.shortcutId, null, null, Process.myUserHandle()
-            )
-        }.onFailure {
-            toast(ctx, "Could not start shortcut: ${it.message ?: "LightHouse must be the default launcher"}")
-        }
-        return
-    }
-
-    val target = LaunchIntentBuilder.Target(uri = game.uri, id = game.id, title = game.title)
-    when (val r = LaunchIntentBuilder.build(profile.launch, target)) {
-        is LaunchIntentBuilder.Result.Unbuildable -> toast(ctx, "Cannot launch: ${r.reason}")
-        is LaunchIntentBuilder.Result.Ready ->
-            runCatching { ctx.startActivity(r.intent) }
-                .onFailure { toast(ctx, "Launch failed: ${it.message ?: it::class.simpleName}") }
-    }
-}
-
-/**
- * A profile that failed validation is not in the loaded list, so recover it from
- * disk to attach a folder. Without this the "Choose folder" button could only
- * ever fix profiles that were already working.
- */
-private fun rejectedProfile(app: LightHouseApp, id: String): PlatformProfile? =
-    runCatching {
+    private fun loadProfileById(id: String): PlatformProfile? = runCatching {
         val f = java.io.File(app.profiles.dir, if (id.endsWith(".json")) id else "$id.json")
-        if (!f.exists()) null
+        if (!f.isFile) null
         else kotlinx.serialization.json.Json { isLenient = true; ignoreUnknownKeys = true }
             .decodeFromString<PlatformProfile>(f.readText())
     }.getOrNull()
 
-private fun toast(ctx: Context, msg: String) =
-    Toast.makeText(ctx, msg, Toast.LENGTH_LONG).show()
+    // ---- input --------------------------------------------------------------
+
+    /**
+     * dispatchKeyEvent, not onKeyDown.
+     *
+     * Compose's focus system consumes the d-pad before an Activity's onKeyDown
+     * ever runs, so with onKeyDown the bumpers worked and the d-pad silently did
+     * nothing. Intercepting at dispatch keeps the cursor authoritative, which is
+     * the whole point of driving selection by index.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.action == KeyEvent.ACTION_DOWN) {
+            val nav = GamepadNav.fromKey(event.keyCode)
+            if (nav != null) { handle(nav); return true }
+        } else if (event.action == KeyEvent.ACTION_UP) {
+            // Swallow the matching UP so nothing downstream reacts to it.
+            if (GamepadNav.fromKey(event.keyCode) != null) return true
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        val nav = GamepadNav.fromMotion(event)
+        if (nav != null) { handle(nav); return true }
+        return super.dispatchGenericMotionEvent(event)
+    }
+
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        val nav = GamepadNav.fromMotion(event)
+        if (nav != null) { handle(nav); return true }
+        return super.onGenericMotionEvent(event)
+    }
+
+    private fun handle(nav: Nav) {
+        val page = pages.getOrNull(systemIndex)
+        when (nav) {
+            Nav.PREV_SYSTEM -> if (pages.isNotEmpty()) {
+                systemIndex = (systemIndex - 1 + pages.size) % pages.size
+                cursor = cursor.copy(index = 0)
+            }
+            Nav.NEXT_SYSTEM -> if (pages.isNotEmpty()) {
+                systemIndex = (systemIndex + 1) % pages.size
+                cursor = cursor.copy(index = 0)
+            }
+            Nav.LEFT, Nav.RIGHT, Nav.UP, Nav.DOWN ->
+                cursor = cursor.move(nav, page?.games?.size ?: 0)
+            Nav.LAUNCH -> {
+                val g = page?.games?.getOrNull(cursor.index)
+                if (page != null && g != null) launch(page, g)
+                else if (page != null && page.problem?.contains("no roots") == true) {
+                    chooseFolder(page.profile.id)
+                }
+            }
+            Nav.BACK -> Unit          // a launcher has nowhere to go back to
+            Nav.MENU -> toast("Settings are not built yet")
+            Nav.SEARCH -> toast("Search is not built yet")
+        }
+    }
+
+    // ---- actions ------------------------------------------------------------
+
+    private fun chooseFolder(platformId: String) {
+        pendingFolderFor = platformId
+        folderPicker.launch(FolderPicker.intent())
+    }
+
+    private fun runImport() {
+        lifecycleScope.launch {
+            val r = withContext(Dispatchers.IO) { ImportSource.run(this@MainActivity) }
+            toast(r.summary())
+            reload()
+        }
+    }
+
+    private fun launch(page: SystemPage, game: DisplayGame) {
+        val entry = game.entry
+        if (entry == null) {
+            toast("\"${game.title}\" needs its folder re-granted in LightHouse")
+            return
+        }
+        if (entry.shortcutId != null && entry.shortcutPackage != null) {
+            val la = getSystemService(Context.LAUNCHER_APPS_SERVICE) as? LauncherApps
+            if (la == null) { toast("Shortcuts unavailable"); return }
+            runCatching {
+                la.startShortcut(
+                    entry.shortcutPackage, entry.shortcutId, null, null, Process.myUserHandle()
+                )
+            }.onFailure {
+                toast("Could not start shortcut — LightHouse must be the default launcher")
+            }
+            return
+        }
+        val target = LaunchIntentBuilder.Target(entry.uri, entry.id, game.title)
+        when (val r = LaunchIntentBuilder.build(page.profile.launch, target)) {
+            is LaunchIntentBuilder.Result.Unbuildable -> toast("Cannot launch: ${r.reason}")
+            is LaunchIntentBuilder.Result.Ready ->
+                runCatching { startActivity(r.intent) }
+                    .onFailure { toast("Launch failed: ${it.message ?: it::class.simpleName}") }
+        }
+    }
+
+    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+}

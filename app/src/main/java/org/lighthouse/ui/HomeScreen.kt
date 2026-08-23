@@ -1,0 +1,441 @@
+package org.lighthouse.ui
+
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import org.lighthouse.core.DisplayGame
+import org.lighthouse.data.PlatformProfile
+import org.lighthouse.theme.LocalTheme
+import java.io.File
+
+/** One system page: its profile, its games, and anything the user must know. */
+data class SystemPage(
+    val profile: PlatformProfile,
+    val games: List<DisplayGame>,
+    val notes: List<String> = emptyList(),
+    /** Set when the profile itself is broken; the page shows the reason. */
+    val problem: String? = null,
+)
+
+private const val COLUMNS = 5
+
+@Composable
+fun HomeScreen(
+    pages: List<SystemPage>,
+    systemIndex: Int,
+    cursor: GridCursor,
+    onChooseFolder: (String) -> Unit,
+    onImport: () -> Unit,
+    onLaunch: (SystemPage, DisplayGame) -> Unit,
+) {
+    val theme = LocalTheme.current
+    val page = pages.getOrNull(systemIndex)
+    val selected = page?.games?.getOrNull(cursor.index)
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(theme.background)
+    ) {
+        // Ambient wash behind the grid. Beacon has a flat glow; deriving it from
+        // the selected cover makes the page feel like it belongs to the game.
+        AmbientGlow(selected)
+
+        Column(Modifier.fillMaxSize()) {
+            SystemTabs(pages, systemIndex)
+
+            Box(Modifier.weight(1f)) {
+                when {
+                    page == null -> CentreMessage("No systems yet. Import from Beacon or add a platform.")
+                    page.problem != null -> ProblemPane(page, onChooseFolder)
+                    page.games.isEmpty() -> ProblemPane(page, onChooseFolder)
+                    else -> {
+                        val anyPlayable = page.games.any { it.playable }
+                        CoverGrid(page, cursor, perTileBadges = anyPlayable) { g -> onLaunch(page, g) }
+                    }
+                }
+            }
+
+            page?.let { p ->
+                if (p.games.isNotEmpty() && p.games.none { it.playable }) {
+                    SystemNotice(
+                        p.games.size.toString() +
+                            " games imported — choose this system's folder to play them"
+                    ) { onChooseFolder(p.profile.id) }
+                }
+            }
+            BottomBar(selected, onImport)
+        }
+    }
+}
+
+@Composable
+private fun AmbientGlow(selected: DisplayGame?) {
+    val theme = LocalTheme.current
+    // Cheap and stable: tint from the theme accent rather than decoding the
+    // bitmap on every cursor move, which would stutter the grid.
+    val tint = theme.primary
+    val alpha by animateFloatAsState(
+        targetValue = if (selected != null) 0.07f else 0.03f,
+        animationSpec = tween(400),
+        label = "glow",
+    )
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(
+                Brush.radialGradient(
+                    colors = listOf(tint.copy(alpha = alpha), Color.Transparent),
+                    center = Offset(260f, 620f),
+                    radius = 1100f,
+                )
+            )
+    )
+}
+
+@Composable
+private fun SystemTabs(pages: List<SystemPage>, systemIndex: Int) {
+    val theme = LocalTheme.current
+    val tabState = androidx.compose.foundation.lazy.rememberLazyListState()
+    // With 15 systems the row overflows; without this the selected tab can sit
+    // off-screen or behind the R1 chip.
+    LaunchedEffect(systemIndex) {
+        if (pages.isNotEmpty()) {
+            tabState.animateScrollToItem(systemIndex.coerceAtMost(pages.size - 1))
+        }
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BumperChip("L1")
+        Spacer(Modifier.width(12.dp))
+
+        LazyRow(
+            modifier = Modifier.weight(1f),
+            state = tabState,
+            contentPadding = PaddingValues(end = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            items(pages) { p ->
+                val i = pages.indexOf(p)
+                val on = i == systemIndex
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(if (on) theme.textPrimary.copy(alpha = 0.22f) else Color.Transparent)
+                        .padding(horizontal = 16.dp, vertical = 7.dp)
+                ) {
+                    Text(
+                        p.profile.shortName.uppercase(),
+                        color = if (on) theme.textPrimary else theme.textSecondary,
+                        fontSize = 17.sp,
+                        fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        BumperChip("R1")
+    }
+}
+
+@Composable
+private fun BumperChip(label: String) {
+    val theme = LocalTheme.current
+    Box(
+        Modifier
+            .size(34.dp)
+            .clip(CircleShape)
+            .background(theme.textPrimary.copy(alpha = 0.92f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = theme.background, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun CoverGrid(
+    page: SystemPage,
+    cursor: GridCursor,
+    perTileBadges: Boolean,
+    onLaunch: (DisplayGame) -> Unit,
+) {
+    val state = rememberLazyGridState()
+
+    // Keep the selected row on screen as the cursor moves.
+    LaunchedEffect(cursor.index) {
+        val row = cursor.row
+        val first = state.firstVisibleItemIndex / COLUMNS
+        val visibleRows = 2
+        if (row < first) state.animateScrollToItem(row * COLUMNS)
+        else if (row >= first + visibleRows) {
+            state.animateScrollToItem(((row - visibleRows + 1) * COLUMNS).coerceAtLeast(0))
+        }
+    }
+
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(COLUMNS),
+        state = state,
+        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        itemsIndexed(page.games) { i, g ->
+            CoverTile(g, focused = i == cursor.index, showBadge = perTileBadges) { onLaunch(g) }
+        }
+    }
+}
+
+@Composable
+private fun CoverTile(
+    game: DisplayGame,
+    focused: Boolean,
+    showBadge: Boolean,
+    onLaunch: () -> Unit,
+) {
+    val theme = LocalTheme.current
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1f else 0.94f,
+        animationSpec = tween(140),
+        label = "tile",
+    )
+    Column(
+        Modifier
+            .scale(scale)
+            .clickable(onClick = onLaunch)
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.72f)
+                .clip(RoundedCornerShape(10.dp))
+                .background(theme.surfaceVariant)
+                .then(
+                    if (focused) Modifier.border(3.dp, theme.textPrimary, RoundedCornerShape(10.dp))
+                    else Modifier
+                )
+        ) {
+            val cover = game.coverPath?.let { File(it) }?.takeIf { it.isFile }
+            if (cover != null) {
+                AsyncImage(
+                    model = cover,
+                    contentDescription = game.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text(
+                        game.title.take(2).uppercase(),
+                        color = theme.textSecondary,
+                        fontSize = 30.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
+            }
+
+            // Title only on the focused tile, exactly like a console launcher -
+            // a caption under every cover turns the grid into a spreadsheet.
+            if (focused) {
+                Box(
+                    Modifier
+                        .align(Alignment.BottomStart)
+                        .fillMaxWidth()
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f))
+                            )
+                        )
+                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        game.title,
+                        color = if (game.playable) theme.primary else theme.error,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            // Box art is the whole point of the grid, so an unplayable game is
+            // marked with a badge rather than by dimming the cover. Washing out
+            // every tile made a working library look broken.
+            if (!game.playable && showBadge) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color.Black.copy(alpha = 0.72f))
+                        .padding(horizontal = 5.dp, vertical = 2.dp)
+                ) {
+                    Text("no access", color = theme.error, fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold)
+                }
+            }
+            if (game.favourite) {
+                Text(
+                    "★",
+                    color = Color(0xFFFFC53D),
+                    fontSize = 14.sp,
+                    modifier = Modifier.align(Alignment.TopEnd).padding(5.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProblemPane(page: SystemPage, onChooseFolder: (String) -> Unit) {
+    val theme = LocalTheme.current
+    Column(
+        Modifier
+            .fillMaxSize()
+            .padding(horizontal = 40.dp),
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Text(page.profile.name, color = theme.textPrimary, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(10.dp))
+        page.problem?.let {
+            Text(it, color = theme.error, fontSize = 15.sp)
+            Spacer(Modifier.height(6.dp))
+        }
+        page.notes.forEach {
+            Text(it, color = theme.textSecondary, fontSize = 15.sp)
+            Spacer(Modifier.height(4.dp))
+        }
+        val needsFolder = page.problem?.contains("no roots") == true ||
+            page.notes.any { it.contains("folder", ignoreCase = true) }
+        if (needsFolder) {
+            Spacer(Modifier.height(16.dp))
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(theme.primary.copy(alpha = 0.18f))
+                    .border(1.dp, theme.primary, RoundedCornerShape(8.dp))
+                    .clickable { onChooseFolder(page.profile.id) }
+                    .padding(horizontal = 18.dp, vertical = 10.dp)
+            ) {
+                Text("Choose folder…", color = theme.primary, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            }
+        }
+    }
+}
+
+@Composable
+private fun CentreMessage(msg: String) {
+    val theme = LocalTheme.current
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(msg, color = theme.textSecondary, fontSize = 16.sp)
+    }
+}
+
+@Composable
+private fun SystemNotice(text: String, onFix: () -> Unit) {
+    val theme = LocalTheme.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(theme.error.copy(alpha = 0.13f))
+            .padding(horizontal = 20.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(text, color = theme.textPrimary, fontSize = 13.sp)
+        Spacer(Modifier.width(14.dp))
+        Box(
+            Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(theme.primary.copy(alpha = 0.22f))
+                .clickable(onClick = onFix)
+                .padding(horizontal = 12.dp, vertical = 4.dp)
+        ) {
+            Text("Choose folder", color = theme.primary, fontSize = 13.sp,
+                fontWeight = FontWeight.Medium)
+        }
+    }
+}
+
+@Composable
+private fun BottomBar(selected: DisplayGame?, onImport: () -> Unit) {
+    val theme = LocalTheme.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .background(Color.Black.copy(alpha = 0.55f))
+            .padding(horizontal = 20.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Hint("B", "Apps")
+        Spacer(Modifier.width(22.dp))
+        Hint("Y", "Settings")
+        Spacer(Modifier.width(22.dp))
+        Box(Modifier.clickable(onClick = onImport)) {
+            Text("Import", color = theme.textSecondary, fontSize = 15.sp)
+        }
+
+        Spacer(Modifier.weight(1f))
+
+        // Says what A will actually do, including when it cannot do it.
+        val label = when {
+            selected == null -> "—"
+            !selected.playable -> "Needs folder access"
+            else -> "Play"
+        }
+        Hint("A", label, dim = selected?.playable != true)
+    }
+}
+
+@Composable
+private fun Hint(button: String, label: String, dim: Boolean = false) {
+    val theme = LocalTheme.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .size(28.dp)
+                .clip(CircleShape)
+                .background(theme.textPrimary.copy(alpha = if (dim) 0.35f else 0.92f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(button, color = theme.background, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            label,
+            color = if (dim) theme.textSecondary else theme.textPrimary,
+            fontSize = 15.sp,
+        )
+    }
+}
