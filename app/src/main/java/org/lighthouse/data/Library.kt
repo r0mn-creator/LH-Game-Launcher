@@ -41,12 +41,22 @@ data class GameRecord(
      * not match - which is the normal case, because a Beacon document URI was
      * granted to Beacon, not to us.
      */
-    val matchName: String
-        get() = title.lowercase()
-            .replace(Regex("""\s*[\(\[][^)\]]*[\)\]]"""), "")
-            .replace(Regex("""[^a-z0-9]+"""), " ")
-            .trim()
+    val matchName: String get() = normaliseTitle(title)
 }
+
+/**
+ * Titles compared with punctuation AND spacing removed.
+ *
+ * Beacon stored "Killer7" where the ROM is "Killer 7 (USA) (Disc 1).iso"; with
+ * spaces significant those are different games, the record looks orphaned, and
+ * a library cleanup would throw away its artwork. Region and disc tags are
+ * dropped first because they are not part of the title.
+ */
+fun normaliseTitle(s: String): String =
+    s.lowercase()
+        .replace(Regex("""\s*[\(\[][^)\]]*[\)\]]"""), "")
+        .replace(Regex("""[^a-z0-9]+"""), "")
+        .trim()
 
 /**
  * The library on disk. One JSON file, loaded once and kept in memory - 557
@@ -92,6 +102,26 @@ class LibraryStore(private val context: Context) {
         }
         cache = list
         persist()
+    }
+
+    /**
+     * Forget records whose game is no longer on disk.
+     *
+     * Imported libraries accumulate these: Beacon listed each disc of a
+     * multi-disc set and each .cue beside a .gdi as separate games, so after
+     * LightHouse collapses those to one entry the leftovers sit on the shelf
+     * greyed out forever. Deliberately an explicit action, never automatic - a
+     * game can also be "missing" because an SD card is unmounted, and silently
+     * deleting its metadata and art would be unrecoverable.
+     *
+     * @return how many were removed.
+     */
+    fun forgetMissing(keepKeys: Set<String>): Int {
+        val list = all()
+        val kept = list.filter { it.key in keepKeys }
+        val removed = list.size - kept.size
+        if (removed > 0) { cache = kept.toMutableList(); persist() }
+        return removed
     }
 
     private fun persist() {

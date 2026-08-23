@@ -80,12 +80,24 @@ object FolderPicker {
         }.isSuccess
         if (!ok) return null
 
-        val roots = (profile.source.roots + tree.toString()).distinct()
+        // Drop roots that nest with the new one. Picking a game's own folder by
+        // mistake used to leave the real system folder listed but ungranted, so
+        // the section scanned one game and looked simply empty - "5 of 26
+        // playable" with no hint that the folder was wrong.
+        val added = tree.toString()
+        val roots = (profile.source.roots.filterNot { nests(it, added) } + added).distinct()
         val updated = profile.copy(source = profile.source.copy(roots = roots))
         // A grant we cannot persist is worse than none: the UI would show the
         // folder as set while every launch still failed.
         if (store.save(updated) != null) return null
         return updated
+    }
+
+    /** True when either tree contains the other. */
+    private fun nests(a: String, b: String): Boolean {
+        val x = a.trimEnd('/'); val y = b.trimEnd('/')
+        return x == y || x.startsWith("$y%2F") || y.startsWith("$x%2F") ||
+            x.startsWith("$y/") || y.startsWith("$x/")
     }
 
     /** Trees LightHouse currently holds a grant for - shown in Settings. */

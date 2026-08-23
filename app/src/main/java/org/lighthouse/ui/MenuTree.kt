@@ -18,6 +18,7 @@ class MenuTree(
         fun import()
         fun setupFolders()
         fun rescan()
+        fun cleanupLibrary()
         fun chooseFolder(platformId: String)
         fun chooseApps()
         fun editIntent(platformId: String)
@@ -32,7 +33,8 @@ class MenuTree(
     fun nodeFor(path: List<String>): MenuNode = when {
         path.isEmpty() -> consoles()
         path[0] == "about" -> about()
-        path[0] == "library" -> library()
+        path[0] == "library" && path.size == 1 -> library()
+        path[0] == "library" -> cleanup()
         path[0] == "consoles" && path.size == 1 -> consoles()
         path[0] == "consoles" -> platform(path[1])
         path[0] == "add" -> addSystem()
@@ -86,8 +88,40 @@ class MenuTree(
                 "Walks every system that still needs access") { actions.setupFolders() },
             MenuItem.Action("Rescan now",
                 "Re-read every folder") { actions.rescan() },
+            MenuItem.Submenu("cleanup", "Forget missing games",
+                if (state.cleanupPlan.total == 0)
+                    "Nothing to forget — every record has a game"
+                else "${state.cleanupPlan.total} record(s) have no file · review first"),
+            MenuItem.Note("Only run that when every folder is connected — a game " +
+                "on an unplugged card looks missing, and its artwork would go too."),
         ),
     )
+
+    /** The removal list, by name, before anything is removed. */
+    private fun cleanup(): MenuNode {
+        val plan = state.cleanupPlan
+        return MenuNode(
+            id = "cleanup", title = "Forget missing games",
+            subtitle = if (plan.total == 0) "Every record still has a game on disk"
+                       else "${plan.total} record(s) have no file. Check the list before removing.",
+            items = buildList {
+                for (g in plan.removals) {
+                    add(MenuItem.Note("${g.platform} — ${g.titles.size}",
+                        g.titles.joinToString(", ")))
+                }
+                for ((name, why) in plan.skipped) {
+                    add(MenuItem.Note("$name — left alone", why))
+                }
+                if (plan.total > 0) {
+                    add(MenuItem.Action(
+                        "Forget these ${plan.total}",
+                        "Their artwork is deleted too. Re-import brings them back.",
+                        danger = true,
+                    ) { actions.cleanupLibrary() })
+                }
+            },
+        )
+    }
 
     private fun consoles() = MenuNode(
         id = "consoles", title = "Consoles",

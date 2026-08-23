@@ -22,6 +22,8 @@ data class GameEntry(
     /** Shortcut passthrough: launched via LauncherApps, not a built intent. */
     val shortcutId: String? = null,
     val shortcutPackage: String? = null,
+    /** >1 when this entry stands for a multi-disc set. */
+    val discCount: Int = 1,
 )
 
 data class Discovery(
@@ -60,6 +62,55 @@ object FolderProvider : GameProvider {
 
     /** Files that are only ever parts of a disc set, never a game on their own. */
     private val TRACKS = setOf("bin", "raw", "sub", "ccd", "img")
+
+    /**
+     * "(Disc 2)", "(Disk 2)", "(CD2)", "(Disc 1 of 2)" and the bracketed forms.
+     *
+     * A two-disc game is two files and one game. Listing both puts an entry on
+     * the shelf that starts the story halfway through, which is never what
+     * someone means to pick.
+     */
+    private val DISC = Regex(
+        """[\s._-]*[\(\[]\s*(?:dis[ck]|cd)\s*0*(\d+)(?:\s*of\s*\d+)?\s*[\)\]]""",
+        RegexOption.IGNORE_CASE,
+    )
+
+    private fun discNumber(name: String): Int? =
+        DISC.find(name)?.groupValues?.getOrNull(1)?.toIntOrNull()
+
+    /**
+     * The name with the disc marker AND the extension removed.
+     *
+     * Region and revision tags are deliberately kept, so "Game (USA)" and
+     * "Game (Europe)" stay separate games. The extension has to go because a
+     * set can mix formats - this library has "Enter the Matrix (Disc 1).ciso"
+     * next to "(Disc 2).7z", which are one game.
+     */
+    private fun discBase(name: String): String =
+        name.substringBeforeLast('.')
+            .replace(DISC, "")
+            .replace(Regex("""\s{2,}"""), " ")
+            .trim()
+
+    /**
+     * A bare trailing number: "Final Fantasy IX 1.cue" beside "... 2.cue".
+     *
+     * Only ever treated as a disc marker when a numbered **1 is actually
+     * present** in the same folder. That single condition is what keeps
+     * sequels intact: "Dino Crisis 2" sits next to "Dino Crisis" with no
+     * "Dino Crisis 1", so it is a game, not a second disc.
+     */
+    private val BARE = Regex("""[\s._-]+0*(\d{1,2})$""")
+
+    private fun bareNumber(n: String): Int? =
+        BARE.find(n.substringBeforeLast('.'))?.groupValues?.getOrNull(1)?.toIntOrNull()
+
+    private fun bareBase(n: String): String =
+        n.substringBeforeLast('.').replace(BARE, "").trim()
+
+    /** Archives are a last resort: an emulator may not read them, and they are
+     *  slower when it can. */
+    private val ARCHIVES = setOf("7z", "zip", "rar")
 
     override fun discover(context: Context, profile: PlatformProfile): Discovery {
         val games = mutableListOf<GameEntry>()
@@ -105,6 +156,7 @@ object FolderProvider : GameProvider {
         // the track files belonging to it are not games.
         val winner = DESCRIPTORS.firstOrNull { it in present && it in exts }
 
+        val candidates = mutableListOf<Pair<String, DocumentFile>>()
         for (f in entries) {
             if (f.isDirectory) {
                 walk(f, exts, profile, out, depth + 1)
@@ -115,11 +167,44 @@ object FolderProvider : GameProvider {
             if (ext !in exts) continue
             if (winner != null && ext != winner) continue   // tracks and rival descriptors
             if (winner == null && ext in TRACKS) continue    // a stray track with no descriptor
+            candidates += n to f
+        }
+
+        // Bases where bare numbering really is a disc set: more than one number
+        // AND a 1 among them. Decided per folder, over the whole candidate list,
+        // because a single filename can never tell you which it is.
+        val bareSets = candidates
+            .mapNotNull { (n, _) -> bareNumber(n)?.let { bareBase(n).lowercase() to it } }
+            .groupBy({ it.first }, { it.second })
+            .filterValues { 1 in it && it.distinct().size > 1 }
+            .keys
+
+        fun isBareDisc(n: String) = bareNumber(n) != null && bareBase(n).lowercase() in bareSets
+        fun groupKey(n: String) =
+            if (isBareDisc(n)) bareBase(n).lowercase() else discBase(n).lowercase()
+        fun disc(n: String) = discNumber(n) ?: bareNumber(n)?.takeIf { isBareDisc(n) }
+
+        // Collapse multi-disc sets to one entry, launching the lowest disc
+        // present. An .m3u already won above, so this only runs where the set
+        // has no playlist.
+        for ((_, group) in candidates.groupBy { (n, _) -> groupKey(n) }) {
+            // Lowest disc first, then prefer a directly readable format over an
+            // archive of the same disc.
+            val pick = group.minWithOrNull(
+                compareBy(
+                    { (n, _) -> disc(n) ?: 0 },
+                    { (n, _) -> if (n.substringAfterLast('.', "").lowercase() in ARCHIVES) 1 else 0 },
+                    { (n, _) -> n.lowercase() },
+                )
+            ) ?: continue
+            val (name, file) = pick
+            val discs = group.count { (n, _) -> disc(n) != null }
             out += GameEntry(
-                key = f.uri.toString(),
-                title = prettyTitle(n),
+                key = file.uri.toString(),
+                title = prettyTitle(name),
                 platformId = profile.id,
-                uri = f.uri,
+                uri = file.uri,
+                discCount = if (discs > 1) discs else 1,
             )
         }
     }

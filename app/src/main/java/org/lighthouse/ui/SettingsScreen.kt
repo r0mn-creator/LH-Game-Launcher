@@ -15,6 +15,29 @@ data class SettingsState(
     val gamesTotal: Int,
     val gamesPlayable: Int,
     val problems: Map<String, String>,
+    val cleanupPlan: CleanupPlan,
+)
+
+/**
+ * What "Forget missing games" would do, worked out before anything is deleted.
+ *
+ * This exists because the action once removed 62 real games: a folder had been
+ * granted on one game's own subfolder, so 21 present PlayStation titles scanned
+ * as missing. No heuristic catches every version of that, so the plan is shown
+ * by name and the deletion is a second, separate press.
+ */
+data class CleanupPlan(
+    val removals: List<CleanupGroup>,
+    /** platform name -> why its records were not considered. */
+    val skipped: List<Pair<String, String>>,
+) {
+    val total: Int get() = removals.sumOf { it.titles.size }
+}
+
+data class CleanupGroup(
+    val platform: String,
+    val titles: List<String>,
+    val keys: List<String>,
 )
 
 data class PlatformRowState(

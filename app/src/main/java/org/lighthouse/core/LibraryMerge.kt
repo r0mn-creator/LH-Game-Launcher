@@ -64,9 +64,5 @@ object LibraryMerge {
         )
     }
 
-    private fun normalise(s: String): String =
-        s.lowercase()
-            .replace(Regex("""\s*[\(\[][^)\]]*[\)\]]"""), "")
-            .replace(Regex("""[^a-z0-9]+"""), " ")
-            .trim()
+    private fun normalise(s: String): String = org.lighthouse.data.normaliseTitle(s)
 }

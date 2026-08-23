@@ -465,6 +465,65 @@ class MainActivity : ComponentActivity() {
         folderPicker.launch(FolderPicker.intent(known))
     }
 
+    /**
+     * Records still backed by something on disk, matched exactly as the shelf
+     * matches them - so cleanup can never remove a game the grid is showing.
+     */
+    /**
+     * Work out which records have no game, and which platforms are in no state
+     * to say. Three ways a scan can be blind, each seen for real on this device:
+     * a shelf with no filesystem (Android apps), a root that failed to open, and
+     * a grant that landed on ONE game's own subfolder - which made a 22-game
+     * system scan exactly 1 and the other 21 look deleted.
+     */
+    private fun cleanupPlan(): CleanupPlan {
+        val removals = mutableListOf<CleanupGroup>()
+        val skipped = mutableListOf<Pair<String, String>>()
+        for (pg in pages) {
+            val records = app.library.forPlatform(pg.profile.id)
+            if (records.isEmpty()) continue
+            val found = pg.games.count { it.playable }
+            val reason = when {
+                pg.profile.source.provider != org.lighthouse.data.SourceSpec.FOLDER ->
+                    "not scanned from a folder"
+                pg.notes.any { it.contains("Cannot read", true) } ->
+                    "its folder could not be read"
+                found == 0 -> "the scan found nothing"
+                records.size >= 6 && found * 3 < records.size ->
+                    "the scan found only $found of ${records.size}"
+                else -> null
+            }
+            if (reason != null) { skipped += pg.profile.name to reason; continue }
+            val alive = pg.games.filter { it.playable }.mapNotNull { it.record?.key }.toSet()
+            val dead = records.filter { it.key !in alive }
+            if (dead.isNotEmpty()) {
+                // Say which are duplicates - another record for the same game
+                // survives - because that is the difference between "tidying an
+                // import" and "losing a game", and the list is worthless if the
+                // reader has to take it on faith. Unique titles sort first: they
+                // are the ones worth looking at twice.
+                val keptNames = records.filter { it.key in alive }.map { it.matchName }.toSet()
+                val labelled = dead
+                    .map { r -> r.title to (r.matchName in keptNames) }
+                    .sortedWith(compareBy({ it.second }, { it.first.lowercase() }))
+                    .map { (title, dup) -> if (dup) "$title (duplicate)" else title }
+                removals += CleanupGroup(pg.profile.name, labelled, dead.map { it.key })
+            }
+        }
+        return CleanupPlan(removals, skipped)
+    }
+
+    private fun cleanupLibrary() {
+        val plan = cleanupPlan()
+        if (plan.total == 0) { toast("Nothing to forget"); return }
+        val doomed = plan.removals.flatMap { it.keys }.toSet()
+        val keep = app.library.all().map { it.key }.filterNot { it in doomed }.toSet()
+        val removed = app.library.forgetMissing(keep)
+        reload()
+        menuBack()
+        toast("Forgot $removed record(s) with no game on disk")
+    }
+
     private fun runImport() {
         lifecycleScope.launch {
             val r = withContext(Dispatchers.IO) { ImportSource.run(this@MainActivity) }
@@ -580,6 +639,7 @@ class MainActivity : ComponentActivity() {
         override fun import() = runImport()
         override fun setupFolders() { showSettings = false; startSetup() }
         override fun rescan() { reload(); toast("Rescanning…") }
+        override fun cleanupLibrary() = this@MainActivity.cleanupLibrary()
         override fun chooseFolder(platformId: String) {
             showSettings = false
             this@MainActivity.chooseFolder(platformId)
@@ -631,16 +691,18 @@ class MainActivity : ComponentActivity() {
                     installedEmulator = app.catalogue.installedFor(sys).firstOrNull()?.name,
                 )
             }
+        val colors = app.colors.load()   // one read; this runs on every keypress
         return SettingsState(
             platforms = rows,
             catalogue = cat,
-            colorThemes = app.colors.load().themes.map { it.name },
+            colorThemes = colors.themes.map { it.name },
             activeColorTheme = app.config.colorTheme
                 ?: org.lighthouse.theme.ColorThemes.DEFAULT_NAME,
-            colorProblems = app.colors.load().problems,
+            colorProblems = colors.problems,
             gamesTotal = pages.sumOf { it.games.size },
             gamesPlayable = pages.sumOf { pg -> pg.games.count { it.playable } },
             problems = loaded.problems,
+            cleanupPlan = cleanupPlan(),
         )
     }
 
