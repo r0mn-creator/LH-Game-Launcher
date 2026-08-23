@@ -6,6 +6,9 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -116,7 +119,28 @@ fun HomeScreen(
         Column(Modifier.fillMaxSize()) {
             SystemTabs(pages, systemIndex, onPrevSystem, onNextSystem, onPickSystem)
 
-            Box(Modifier.weight(1f)) {
+            // Horizontal swipe pages systems, same as the bumpers. The grid
+            // scrolls vertically, so a horizontal drag cannot be meant for it.
+            val swipePx = with(LocalDensity.current) { 72.dp.toPx() }
+            Box(
+                Modifier
+                    .weight(1f)
+                    .pointerInput(pages.size, systemIndex) {
+                        var dx = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { dx = 0f },
+                            onDragEnd = {
+                                // Swipe left = go forward, matching every
+                                // paged UI on the platform.
+                                if (dx <= -swipePx) onNextSystem()
+                                else if (dx >= swipePx) onPrevSystem()
+                            },
+                        ) { change, amount ->
+                            dx += amount
+                            change.consume()
+                        }
+                    }
+            ) {
                 when {
                     page == null -> CentreMessage("No systems yet. Import from Beacon or add a platform.")
                     page.problem != null -> ProblemPane(page, onChooseFolder)
