@@ -43,6 +43,24 @@ interface GameProvider {
 object FolderProvider : GameProvider {
     override val name = SourceSpec.FOLDER
 
+    /**
+     * Disc formats where ONE game is many files.
+     *
+     * A Dreamcast game is a .gdi or .cue plus a track .bin per audio/data
+     * track; a PlayStation game is a .cue plus its .bin. Counting every file
+     * turns 41 Dreamcast games into 179 entries, most of them unlaunchable
+     * fragments. So within a directory, if any descriptor is present, only the
+     * highest-priority descriptor counts and the tracks it references are
+     * ignored.
+     *
+     * Ordered most-preferred first: a folder holding both .gdi and .cue for the
+     * same game should yield one entry, not two.
+     */
+    private val DESCRIPTORS = listOf("m3u", "gdi", "cue", "chd", "cdi")
+
+    /** Files that are only ever parts of a disc set, never a game on their own. */
+    private val TRACKS = setOf("bin", "raw", "sub", "ccd", "img")
+
     override fun discover(context: Context, profile: PlatformProfile): Discovery {
         val games = mutableListOf<GameEntry>()
         val notes = mutableListOf<String>()
@@ -78,7 +96,16 @@ object FolderProvider : GameProvider {
         depth: Int,
     ) {
         if (depth > 6) return          // ROM sets nest, but not that deeply
-        for (f in dir.listFiles()) {
+
+        val entries = dir.listFiles()
+        val files = entries.filter { !it.isDirectory }
+        val present = files.mapNotNull { it.name?.substringAfterLast('.', "")?.lowercase() }.toSet()
+
+        // If this directory describes discs, one descriptor kind wins here and
+        // the track files belonging to it are not games.
+        val winner = DESCRIPTORS.firstOrNull { it in present && it in exts }
+
+        for (f in entries) {
             if (f.isDirectory) {
                 walk(f, exts, profile, out, depth + 1)
                 continue
@@ -86,6 +113,8 @@ object FolderProvider : GameProvider {
             val n = f.name ?: continue
             val ext = n.substringAfterLast('.', "").lowercase()
             if (ext !in exts) continue
+            if (winner != null && ext != winner) continue   // tracks and rival descriptors
+            if (winner == null && ext in TRACKS) continue    // a stray track with no descriptor
             out += GameEntry(
                 key = f.uri.toString(),
                 title = prettyTitle(n),
@@ -99,7 +128,7 @@ object FolderProvider : GameProvider {
     fun prettyTitle(fileName: String): String =
         fileName
             .substringBeforeLast('.')
-            .replace(Regex("""\.(xiso|xex|iso)$""", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("""\.(xiso|xex|iso|nkit)$""", RegexOption.IGNORE_CASE), "")
             .replace(Regex("""\s*[\(\[][^)\]]*[\)\]]"""), "")
             .replace('_', ' ')
             .trim()
