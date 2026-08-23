@@ -36,11 +36,23 @@ class ProfileStore(private val context: Context) {
             Log.e(TAG, "could not create $dir")
             return
         }
+        // Existing ids, not just existing filenames. A bundled preset and an
+        // imported profile can describe the same system under different file
+        // names (gamecube.json vs gc.json, both id "gc"), which produced a
+        // duplicate platform in the UI - one working, one broken.
+        val existingIds = load().profiles.map { it.id }.toSet()
+
         val names = runCatching { context.assets.list("platforms") }.getOrNull().orEmpty()
         for (n in names) {
             if (!n.endsWith(".json")) continue
             val out = File(dir, n)
             if (out.exists()) continue          // user's copy wins, always
+            val bundledId = runCatching {
+                json.decodeFromString<PlatformProfile>(
+                    context.assets.open("platforms/$n").bufferedReader().use { it.readText() }
+                ).id
+            }.getOrNull()
+            if (bundledId != null && bundledId in existingIds) continue
             runCatching {
                 context.assets.open("platforms/$n").use { i ->
                     out.outputStream().use { o -> i.copyTo(o) }
@@ -72,7 +84,20 @@ class ProfileStore(private val context: Context) {
                 is ProfileCheck.Invalid -> problems[p.id.ifBlank { f.name }] = c.reason
             }
         }
-        return Loaded(profiles.sortedBy { it.order }, problems)
+
+        // Two files can still claim the same id (a hand-copied profile, say).
+        // Keep the first and SAY SO - silently dropping one would leave the user
+        // editing a file that has no effect.
+        val seen = mutableSetOf<String>()
+        val unique = mutableListOf<PlatformProfile>()
+        for (p in profiles) {
+            if (!seen.add(p.id)) {
+                problems[p.id] = "duplicate id — a second profile with this id was ignored"
+                continue
+            }
+            unique += p
+        }
+        return Loaded(unique.sortedBy { it.order }, problems)
     }
 
     fun save(p: PlatformProfile) {

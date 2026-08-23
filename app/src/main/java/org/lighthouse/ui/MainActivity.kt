@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
     private var systemIndex by mutableIntStateOf(0)
     private var cursor by mutableStateOf(GridCursor())
     private var pendingFolderFor: String? = null
+    private var showSettings by mutableStateOf(false)
     /**
      * Systems still waiting for a folder, walked one picker at a time.
      *
@@ -80,14 +81,29 @@ class MainActivity : ComponentActivity() {
         setContent {
             val theme by remember { mutableStateOf(app.themes.active()) }
             CompositionLocalProvider(LocalTheme provides theme) {
-                HomeScreen(
-                    pages = pages,
-                    systemIndex = systemIndex,
-                    cursor = cursor,
-                    onChooseFolder = ::chooseFolder,
-                    onImport = ::runImport,
-                    onLaunch = ::launch,
-                )
+                if (showSettings) {
+                    SettingsScreen(
+                        state = settingsState(),
+                        onBack = { showSettings = false },
+                        onImport = ::runImport,
+                        onSetupFolders = { showSettings = false; startSetup() },
+                        onRescan = ::reload,
+                        onTogglePlatform = ::togglePlatform,
+                        onChooseFolder = { showSettings = false; chooseFolder(it) },
+                        onAddSystem = ::addSystem,
+                        onRemovePlatform = ::removePlatform,
+                        onPickTheme = ::pickTheme,
+                    )
+                } else {
+                    HomeScreen(
+                        pages = pages,
+                        systemIndex = systemIndex,
+                        cursor = cursor,
+                        onChooseFolder = ::chooseFolder,
+                        onImport = ::runImport,
+                        onLaunch = ::launch,
+                    )
+                }
             }
         }
         reload()
@@ -205,8 +221,8 @@ class MainActivity : ComponentActivity() {
                     chooseFolder(page.profile.id)
                 }
             }
-            Nav.BACK -> Unit          // a launcher has nowhere to go back to
-            Nav.MENU -> startSetup()
+            Nav.BACK -> if (showSettings) showSettings = false   // else: a launcher has nowhere to go
+            Nav.MENU -> showSettings = !showSettings
             Nav.SEARCH -> toast("Search is not built yet")
         }
     }
@@ -310,6 +326,75 @@ class MainActivity : ComponentActivity() {
                 runCatching { startActivity(r.intent) }
                     .onFailure { toast("Launch failed: ${it.message ?: it::class.simpleName}") }
         }
+    }
+
+    // ---- settings -----------------------------------------------------------
+
+    private fun settingsState(): SettingsState {
+        val loaded = app.profiles.load()
+        val rows = pages.map { pg ->
+            PlatformRowState(
+                id = pg.profile.id,
+                name = pg.profile.name,
+                games = pg.games.size,
+                playable = pg.games.count { it.playable },
+                verified = pg.profile.verified,
+                needsFolder = pg.profile.source.provider == org.lighthouse.data.SourceSpec.FOLDER &&
+                    FolderPicker.needsFolder(this, pg.profile.source.roots),
+                enabled = pg.profile.enabled,
+                problem = pg.problem,
+            )
+        }
+        val have = rows.map { it.id }.toSet()
+        val cat = app.catalogue.load().systems
+            .sortedBy { it.year }
+            .map { sys ->
+                CatalogueRowState(
+                    system = sys,
+                    alreadyAdded = sys.id in have,
+                    installedEmulator = app.catalogue.installedFor(sys).firstOrNull()?.name,
+                )
+            }
+        return SettingsState(
+            platforms = rows,
+            catalogue = cat,
+            themes = app.themes.load().themes.map { it.id },
+            activeTheme = app.themes.selectedId,
+            gamesTotal = pages.sumOf { it.games.size },
+            gamesPlayable = pages.sumOf { pg -> pg.games.count { it.playable } },
+            problems = loaded.problems,
+        )
+    }
+
+    private fun togglePlatform(id: String, enabled: Boolean) {
+        val p = loadProfileById(id) ?: return
+        app.profiles.save(p.copy(enabled = enabled))
+        reload()
+    }
+
+    private fun removePlatform(id: String) {
+        // Only the profile goes; imported games and art stay in the library so
+        // re-adding the system does not mean re-importing it.
+        app.profiles.delete(id)
+        reload()
+        toast("Removed. Imported games and art are kept.")
+    }
+
+    private fun addSystem(system: org.lighthouse.data.CatalogueSystem) {
+        val emu = app.catalogue.installedFor(system).firstOrNull()
+        val order = (pages.maxOfOrNull { it.profile.order } ?: 0) + 1
+        app.profiles.save(app.catalogue.profileFor(system, emu, order))
+        reload()
+        toast(
+            if (emu == null) "Added ${'$'}{system.name} — set its emulator and folder in Settings"
+            else "Added ${'$'}{system.name} using ${'$'}{emu.name}"
+        )
+    }
+
+    private fun pickTheme(id: String?) {
+        app.themes.selectedId = id
+        toast(if (id == null) "Reset to the built-in theme" else "Theme: ${'$'}id")
+        recreate()
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
