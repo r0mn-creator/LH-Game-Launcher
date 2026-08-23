@@ -11,7 +11,10 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
+import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -57,6 +60,13 @@ class MainActivity : ComponentActivity() {
     private var editingSpec by mutableStateOf<org.lighthouse.data.LaunchSpec?>(null)
     /** Set while a test launch is out; answered when the user comes back. */
     private var verifyFor by mutableStateOf<Pair<String, String>?>(null)
+    private var editorCursor by mutableIntStateOf(0)
+    private var appPickerCursor by mutableIntStateOf(0)
+    /** Open text prompt: title, hint, current value, and what to do with it. */
+    private var prompt by mutableStateOf<Triple<String, String?, String>?>(null)
+    private var promptApply: ((String) -> Unit)? = null
+    private var editingPickPackage by mutableStateOf(false)
+    private var pkgCursor by mutableIntStateOf(0)
     /**
      * Systems still waiting for a folder, walked one picker at a time.
      *
@@ -111,20 +121,41 @@ class MainActivity : ComponentActivity() {
                 val vf = verifyFor
                 if (vf != null) {
                     VerifyDialog(vf.second) { ok -> answerVerify(ok) }
-                } else if (ed != null && editingSpec != null) {
-                    IntentEditorScreen(
-                        state = editorState(ed, editingSpec!!),
-                        onChange = { editingSpec = it },
-                        onPickPackage = { pkg ->
-                            editingSpec = editingSpec?.copy(component = pkg)
-                        },
-                        onTest = ::testLaunch,
-                        onSave = ::saveEditing,
-                        onBack = { editingId = null; editingSpec = null },
+                } else if (ed != null && editingPickPackage) {
+                    val node = packageNode()
+                    ConsoleMenuScreen(
+                        node = node,
+                        cursor = pkgCursor.coerceIn(0, (node.items.size - 1).coerceAtLeast(0)),
+                        forward = true,
+                        depth = 1,
+                        onSelect = { pkgCursor = it },
+                        onActivate = { i -> activate(node, i) },
+                        onBack = { editingPickPackage = false },
                     )
+                } else if (ed != null && editingSpec != null) {
+                    val node = intentNode(ed, editingSpec!!)
+                    Box(Modifier.fillMaxSize()) {
+                        ConsoleMenuScreen(
+                            node = node,
+                            cursor = clampEditorCursor(node),
+                            forward = true,
+                            depth = 1,
+                            onSelect = { editorCursor = it },
+                            onActivate = { i -> activate(node, i) },
+                            onBack = { editingId = null; editingSpec = null },
+                        )
+                        prompt?.let { (t, h, v) ->
+                            TextPromptOverlay(t, h, v,
+                                onDone = { promptApply?.invoke(it); prompt = null },
+                                onCancel = { prompt = null })
+                        }
+                    }
                 } else if (showAppPicker) {
+                    val rows = appPickerRows()
                     AppPickerScreen(
-                        apps = appPickerRows(),
+                        apps = rows,
+                        cursor = appPickerCursor.coerceIn(0, (rows.size - 1).coerceAtLeast(0)),
+                        onSelect = { appPickerCursor = it },
                         onToggle = ::toggleApp,
                         onClose = { showAppPicker = false; reload() },
                     )
@@ -294,12 +325,40 @@ class MainActivity : ComponentActivity() {
                 cursor = cursor.copy(index = 0)
             }
             Nav.LEFT, Nav.RIGHT, Nav.UP, Nav.DOWN -> when {
+                prompt != null -> Unit          // the keyboard owns the d-pad
+                editingPickPackage -> {
+                    val n = packageNode().items.size
+                    if (n > 0) pkgCursor = when (nav) {
+                        Nav.UP, Nav.LEFT -> (pkgCursor - 1).coerceAtLeast(0)
+                        Nav.DOWN, Nav.RIGHT -> (pkgCursor + 1).coerceAtMost(n - 1)
+                        else -> pkgCursor
+                    }
+                }
+                editingId != null -> moveEditor(nav)
+                showAppPicker -> {
+                    val n = appPickerRows().size
+                    if (n > 0) appPickerCursor = when (nav) {
+                        Nav.UP, Nav.LEFT -> (appPickerCursor - 1).coerceAtLeast(0)
+                        Nav.DOWN, Nav.RIGHT -> (appPickerCursor + 1).coerceAtMost(n - 1)
+                        else -> appPickerCursor
+                    }
+                }
                 showDrawer -> drawerCursor = GridCursor(drawerCursor, DRAWER_COLUMNS)
                     .move(nav, drawerApps.size).index
                 showSettings -> moveMenu(nav)
                 else -> cursor = cursor.move(nav, page?.games?.size ?: 0)
             }
-            Nav.LAUNCH -> if (showDrawer) {
+            Nav.LAUNCH -> if (prompt != null) {
+                Unit
+            } else if (editingPickPackage) {
+                val n = packageNode()
+                activate(n, pkgCursor.coerceIn(0, (n.items.size - 1).coerceAtLeast(0)))
+            } else if (editingId != null) {
+                val n = intentNode(editingId!!, editingSpec!!)
+                activate(n, clampEditorCursor(n))
+            } else if (showAppPicker) {
+                appPickerRows().getOrNull(appPickerCursor)?.let { toggleApp(it.pkg, !it.chosen) }
+            } else if (showDrawer) {
                 drawerApps.getOrNull(drawerCursor)?.let { launchApp(it.first) }
             } else if (showSettings) {
                 if (pane == Pane.RAIL) {
@@ -316,7 +375,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
             Nav.BACK -> when {
+                prompt != null -> prompt = null
                 verifyFor != null -> Unit          // must be answered
+                editingPickPackage -> editingPickPackage = false
                 editingId != null -> { editingId = null; editingSpec = null }
                 showAppPicker -> { showAppPicker = false; reload() }
                 showDrawer -> showDrawer = false
@@ -597,6 +658,131 @@ class MainActivity : ComponentActivity() {
         editingId = id
         editingSpec = p.launch
         showSettings = false
+    }
+
+    /** Choosing which installed app is this console's emulator. */
+    private fun packageNode(): MenuNode = MenuNode(
+        id = "pickpkg",
+        title = "Choose emulator",
+        subtitle = "Any installed app can be a console's player",
+        items = org.lighthouse.provider.InstalledAppsProvider.installedApps(this).map { (pkg, label) ->
+            MenuItem.Action(label, pkg) {
+                // Keep only the package: a bare package lets Android resolve the
+                // activity, which is right far more often than pinning a class.
+                editingSpec = editingSpec?.copy(component = pkg)
+                editingPickPackage = false
+            }
+        },
+    )
+
+    private fun clampEditorCursor(node: MenuNode): Int {
+        val ok = node.selectable()
+        if (ok.isEmpty()) return 0
+        return if (editorCursor in ok) editorCursor else ok.first()
+    }
+
+    private fun moveEditor(nav: Nav) {
+        val node = intentNode(editingId ?: return, editingSpec ?: return)
+        val ok = node.selectable()
+        if (ok.isEmpty()) return
+        val at = ok.indexOf(clampEditorCursor(node)).coerceAtLeast(0)
+        editorCursor = when (nav) {
+            Nav.UP, Nav.LEFT -> ok[(at - 1).coerceAtLeast(0)]
+            Nav.DOWN, Nav.RIGHT -> ok[(at + 1).coerceAtMost(ok.size - 1)]
+            else -> ok[at]
+        }
+    }
+
+    private fun askText(title: String, hint: String?, current: String, apply: (String) -> Unit) {
+        promptApply = apply
+        prompt = Triple(title, hint, current)
+    }
+
+    private fun intentNode(id: String, spec: org.lighthouse.data.LaunchSpec): MenuNode {
+        val st = editorState(id, spec)
+        val acts = st.activities
+        return IntentMenu.node(
+            platformName = st.platformName,
+            spec = spec,
+            verified = st.verified,
+            testGame = st.testGame,
+            preview = st.preview,
+            a = object : IntentMenu.Actions {
+                override fun pickPackage() { editingPickPackage = true }
+                override fun promptText(field: IntentMenu.TextField, current: String) {
+                    when (field) {
+                        IntentMenu.TextField.ACTION -> askText("Action",
+                            "e.g. android.intent.action.VIEW", current) {
+                            editingSpec = editingSpec?.copy(action = it)
+                        }
+                        IntentMenu.TextField.MIME -> askText("MIME type",
+                            "Leave blank for none", current) {
+                            editingSpec = editingSpec?.copy(type = it.ifBlank { null })
+                        }
+                        IntentMenu.TextField.ROM_EXTRA -> askText("Extra name",
+                            "The extra that receives the game's URI", current) {
+                            editingSpec = editingSpec?.copy(romExtra = it.ifBlank { null })
+                        }
+                        else -> Unit
+                    }
+                }
+                override fun cycleActivity() {
+                    editingSpec = editingSpec?.let { IntentMenu.withActivity(it, acts) }
+                }
+                override fun cycleAction() {
+                    editingSpec = editingSpec?.let {
+                        it.copy(action = IntentMenu.cycled(IntentMenu.ACTIONS, it.action))
+                    }
+                }
+                override fun cycleRomMode() {
+                    editingSpec = editingSpec?.let {
+                        it.copy(romMode = IntentMenu.cycled(IntentMenu.ROM_MODES, it.romMode))
+                    }
+                }
+                override fun toggleFlag(flag: String) {
+                    editingSpec = editingSpec?.let {
+                        it.copy(flags = if (flag in it.flags) it.flags - flag else it.flags + flag)
+                    }
+                }
+                override fun addExtra() {
+                    editingSpec = editingSpec?.let {
+                        it.copy(extras = it.extras +
+                            org.lighthouse.data.ExtraSpec("key", "string", "{file}"))
+                    }
+                }
+                override fun editExtra(index: Int, part: IntentMenu.ExtraPart) {
+                    val e = editingSpec?.extras?.getOrNull(index) ?: return
+                    when (part) {
+                        IntentMenu.ExtraPart.KEY -> askText("Extra key", null, e.key) { v ->
+                            editingSpec = editingSpec?.let {
+                                IntentMenu.withExtraAt(it, index) { x -> x.copy(key = v) }
+                            }
+                        }
+                        IntentMenu.ExtraPart.VALUE -> askText("Extra value",
+                            "{file}, {id} and {title} are filled in at launch", e.value) { v ->
+                            editingSpec = editingSpec?.let {
+                                IntentMenu.withExtraAt(it, index) { x -> x.copy(value = v) }
+                            }
+                        }
+                    }
+                }
+                override fun cycleExtraType(index: Int) {
+                    val types = listOf("string", "int", "long", "bool")
+                    editingSpec = editingSpec?.let {
+                        IntentMenu.withExtraAt(it, index) { x ->
+                            x.copy(type = IntentMenu.cycled(types, x.type))
+                        }
+                    }
+                }
+                override fun removeExtra(index: Int) {
+                    editingSpec = editingSpec?.let {
+                        it.copy(extras = it.extras.filterIndexed { j, _ -> j != index })
+                    }
+                }
+                override fun test() = testLaunch()
+                override fun save() = saveEditing()
+            },
+        )
     }
 
     /** Rows for the Android app-shelf picker. */
