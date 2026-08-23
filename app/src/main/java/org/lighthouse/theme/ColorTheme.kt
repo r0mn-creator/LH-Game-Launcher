@@ -115,6 +115,48 @@ object ColorThemes {
 
     private fun luminance(c: Color) = 0.2126f * c.red + 0.7152f * c.green + 0.0722f * c.blue
 
+    /** WCAG relative luminance, which needs the gamma curve undone first. */
+    private fun relLuminance(c: Color): Float {
+        fun ch(v: Float) = if (v <= 0.03928f) v / 12.92f
+                           else Math.pow(((v + 0.055f) / 1.055f).toDouble(), 2.4).toFloat()
+        return 0.2126f * ch(c.red) + 0.7152f * ch(c.green) + 0.0722f * ch(c.blue)
+    }
+
+    /** WCAG contrast ratio, 1.0 (identical) to 21.0 (black on white). */
+    fun contrast(a: Color, b: Color): Float {
+        val la = relLuminance(a); val lb = relLuminance(b)
+        val hi = maxOf(la, lb); val lo = minOf(la, lb)
+        return (hi + 0.05f) / (lo + 0.05f)
+    }
+
+    /**
+     * Text is the one role an author can set and make the whole UI unreadable,
+     * which is the reason it stays OPTIONAL and derived by default. When it IS
+     * set, a poor choice is reported rather than silently rendered - the same
+     * rule the rest of the app follows.
+     *
+     * 4.5:1 is the WCAG AA threshold for body text.
+     */
+    fun warnings(t: ColorTheme): List<String> = buildList {
+        t.overrides["text"]?.let { text ->
+            val c = contrast(text, t.main)
+            if (c < 4.5f) {
+                add("--text on --main is %.1f:1, below the 4.5:1 readable threshold"
+                    .format(c))
+            }
+        }
+        t.overrides["text-secondary"]?.let { text ->
+            val c = contrast(text, t.main)
+            if (c < 3.0f) {
+                add("--text-secondary on --main is %.1f:1 and will be hard to read"
+                    .format(c))
+            }
+        }
+        if (contrast(t.accent, t.main) < 2.0f) {
+            add("--accent barely separates from --main; the selection will be hard to see")
+        }
+    }
+
     private fun mix(a: Color, b: Color, t: Float) = Color(
         red = a.red + (b.red - a.red) * t,
         green = a.green + (b.green - a.green) * t,
@@ -177,7 +219,7 @@ class ColorThemeStore(private val context: Context) {
 
     data class Loaded(
         val themes: List<ColorTheme>,
-        /** file name -> why it was rejected. Shown in Settings. */
+        /** file name -> why it was rejected, or a readability warning. */
         val problems: Map<String, String>,
     )
 
@@ -192,7 +234,11 @@ class ColorThemeStore(private val context: Context) {
             val parsed = runCatching { ColorThemes.parse(name, f.readText(), f) }
                 .getOrElse { Result.failure(it) }
             parsed
-                .onSuccess { out += it }
+                .onSuccess {
+                    out += it
+                    // Loaded, but say so if it will be hard to read.
+                    ColorThemes.warnings(it).firstOrNull()?.let { w -> problems[f.name] = w }
+                }
                 // Reported, not skipped: a theme that silently vanishes looks
                 // identical to one that was never added.
                 .onFailure { problems[f.name] = it.message ?: "could not be read" }
