@@ -1,0 +1,20 @@
+{
+  "id": "midnight-amber",
+  "name": "Midnight Amber",
+  "colors": {
+    "background": "#0B0A08",
+    "surface": "#17140F",
+    "surface_variant": "#241E16",
+    "primary": "#F0A202",
+    "secondary": "#C75300",
+    "accent": "#F2E8CF",
+    "text_primary": "#F5EFE6",
+    "text_secondary": "#A2957F",
+    "text_disabled": "#5A5145",
+    "outline": "#3A3227",
+    "error": "#E5484D"
+  },
+  "typography": { "family": "Inter", "scale": 1.0 },
+  "shape": { "corner_radius": 10, "card_elevation": 3 },
+  "grid": { "cover_aspect_default": "3:4", "spacing": 14 }
+}

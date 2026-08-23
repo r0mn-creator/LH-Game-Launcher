@@ -1,0 +1,20 @@
+{
+  "id": "beacon-light",
+  "name": "Daylight",
+  "colors": {
+    "background": "#F6F7F9",
+    "surface": "#FFFFFF",
+    "surface_variant": "#ECEFF3",
+    "primary": "#1F6FEB",
+    "secondary": "#6E40C9",
+    "accent": "#1A7F37",
+    "text_primary": "#1F2328",
+    "text_secondary": "#59636E",
+    "text_disabled": "#B1B8C0",
+    "outline": "#D0D7DE",
+    "error": "#CF222E"
+  },
+  "typography": { "family": "Inter", "scale": 1.0 },
+  "shape": { "corner_radius": 14, "card_elevation": 1 },
+  "grid": { "cover_aspect_default": "3:4", "spacing": 12 }
+}

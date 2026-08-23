@@ -1,0 +1,7 @@
+reference/
+research/apks/
+*.apk
+build/
+.gradle/
+local.properties
+local.properties

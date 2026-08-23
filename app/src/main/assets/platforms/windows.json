@@ -1,0 +1,22 @@
+{
+  "id": "windows",
+  "name": "Microsoft - Windows",
+  "short_name": "Windows",
+  "order": 22,
+  "aspect_ratio": "3:4",
+  "source": {
+    "provider": "library",
+    "app": "app.gamenative"
+  },
+  "launch": {
+    "component": "app.gamenative/.MainActivity",
+    "action": "app.gamenative.LAUNCH_GAME",
+    "rom_mode": "none",
+    "flags": ["NEW_TASK", "CLEAR_TOP"],
+    "extras": [
+      { "key": "app_id", "type": "int", "value": "{id}" },
+      { "key": "game_source", "type": "string", "value": "STEAM" }
+    ]
+  },
+  "verified": false
+}

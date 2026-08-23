@@ -1,0 +1,21 @@
+{
+  "id": "xbox",
+  "name": "Microsoft - Xbox",
+  "short_name": "Xbox",
+  "order": 20,
+  "aspect_ratio": "3:4",
+  "source": {
+    "provider": "folder",
+    "roots": [],
+    "extensions": ["iso", "xiso", "xbe"],
+    "ignore": ["*.txt", "*.nfo"]
+  },
+  "launch": {
+    "component": "com.izzy2lost.x1box/.LauncherActivity",
+    "action": "android.intent.action.VIEW",
+    "rom_mode": "data_uri",
+    "flags": ["GRANT_READ_URI_PERMISSION"]
+  },
+  "scraper": { "platform": "xbox" },
+  "verified": true
+}

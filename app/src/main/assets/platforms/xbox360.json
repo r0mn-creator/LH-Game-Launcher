@@ -1,0 +1,25 @@
+{
+  "id": "xbox360",
+  "name": "Microsoft - Xbox 360",
+  "short_name": "Xbox 360",
+  "order": 21,
+  "aspect_ratio": "3:4",
+  "source": {
+    "provider": "folder",
+    "roots": [],
+    "extensions": ["iso", "xex", "zar"],
+    "ignore": ["*.txt", "*.nfo"]
+  },
+  "launch": {
+    "component": "org.xeniaae.aex/org.xeniaae.EmulatorActivity",
+    "action": "android.intent.action.VIEW",
+    "type": "application/octet-stream",
+    "rom_mode": "data_uri",
+    "flags": ["GRANT_READ_URI_PERMISSION"],
+    "extras": [
+      { "key": "game_title", "type": "string", "value": "{title}" }
+    ]
+  },
+  "scraper": { "platform": "xbox360" },
+  "verified": true
+}
