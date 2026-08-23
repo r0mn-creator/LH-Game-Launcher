@@ -1,0 +1,7 @@
+// Cyber-CRT  —  retro-futuristic terminal
+// Classic phosphor displays meet modern dark-mode tooling: high contrast
+// with an unmistakable arcade feel.
+--main:      #0C0F0A;   // deep charcoal black
+--secondary: #1F2826;   // muted dark slate
+--accent:    #32E0C4;   // electric terminal cyan
+--highlight: #EE4540;   // vibrant amber/coral red

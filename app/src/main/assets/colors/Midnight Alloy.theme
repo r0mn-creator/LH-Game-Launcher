@@ -1,0 +1,6 @@
+// Midnight Alloy  —  tactical / industrial
+// Slate and steel blue with high-visibility warning orange.
+--main:      #11161A;   // obsidian blue-grey
+--secondary: #1E252D;   // midnight steel
+--accent:    #4A90E2;   // tactical blue
+--highlight: #FF6B00;   // industrial alert orange

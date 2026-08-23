@@ -54,6 +54,8 @@ class MainActivity : ComponentActivity() {
     private var menuForward by mutableStateOf(true)
     private var categoryIndex by mutableIntStateOf(0)
     private var pane by mutableStateOf(Pane.RAIL)
+    /** Bumped when the palette changes, to force a recompose. */
+    private var colorEpoch by mutableIntStateOf(0)
     private var showAppPicker by mutableStateOf(false)
     /** Platform whose launch intent is being edited, and the working copy. */
     private var editingId by mutableStateOf<String?>(null)
@@ -115,7 +117,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         immersive()
         setContent {
-            val theme by remember { mutableStateOf(app.themes.active()) }
+            // Re-read on every recomposition trigger so a theme change applies
+            // immediately rather than after a restart.
+            val theme = remember(colorEpoch) { app.activeColors() }
             CompositionLocalProvider(LocalTheme provides theme) {
                 val ed = editingId
                 val vf = verifyFor
@@ -507,7 +511,7 @@ class MainActivity : ComponentActivity() {
         val i = packageManager.getLaunchIntentForPackage(pkg)
         if (i == null) { toast("That app has no launcher entry"); return }
         runCatching { startActivity(i) }
-            .onFailure { toast("Could not open: ${'$'}{it.message}") }
+            .onFailure { toast("Could not open: ${it.message}") }
     }
 
     /** Category id, plus any drilled-into detail. */
@@ -591,7 +595,10 @@ class MainActivity : ComponentActivity() {
         }
         override fun addSystem(system: org.lighthouse.data.CatalogueSystem) =
             this@MainActivity.addSystem(system)
-        override fun pickTheme(id: String?) = this@MainActivity.pickTheme(id)
+        override fun pickColorTheme(name: String?) = this@MainActivity.pickColorTheme(name)
+        override fun openColorFolder() {
+            toast("Colour themes live in " + app.colors.dir.absolutePath)
+        }
     }
 
     // ---- settings -----------------------------------------------------------
@@ -627,8 +634,10 @@ class MainActivity : ComponentActivity() {
         return SettingsState(
             platforms = rows,
             catalogue = cat,
-            themes = app.themes.load().themes.map { it.id },
-            activeTheme = app.themes.selectedId,
+            colorThemes = app.colors.load().themes.map { it.name },
+            activeColorTheme = app.config.colorTheme
+                ?: org.lighthouse.theme.ColorThemes.DEFAULT_NAME,
+            colorProblems = app.colors.load().problems,
             gamesTotal = pages.sumOf { it.games.size },
             gamesPlayable = pages.sumOf { pg -> pg.games.count { it.playable } },
             problems = loaded.problems,
@@ -803,7 +812,7 @@ class MainActivity : ComponentActivity() {
         )
         val preview = when (val r = LaunchIntentBuilder.build(spec, target)) {
             is LaunchIntentBuilder.Result.Ready -> LaunchIntentBuilder.describe(r.intent)
-            is LaunchIntentBuilder.Result.Unbuildable -> "Cannot build: ${'$'}{r.reason}"
+            is LaunchIntentBuilder.Result.Unbuildable -> "Cannot build: ${r.reason}"
         }
         return IntentEditorState(
             platformId = id,
@@ -838,7 +847,7 @@ class MainActivity : ComponentActivity() {
         val e = game.entry ?: return
         val target = LaunchIntentBuilder.Target(e.uri, e.id, game.title)
         when (val r = LaunchIntentBuilder.build(spec, target)) {
-            is LaunchIntentBuilder.Result.Unbuildable -> toast("Cannot launch: ${'$'}{r.reason}")
+            is LaunchIntentBuilder.Result.Unbuildable -> toast("Cannot launch: ${r.reason}")
             is LaunchIntentBuilder.Result.Ready -> {
                 runCatching { startActivity(r.intent) }
                     .onSuccess {
@@ -851,7 +860,7 @@ class MainActivity : ComponentActivity() {
                             .putString(KEY_VERIFY_SPEC, specJson(spec))
                             .apply()
                     }
-                    .onFailure { toast("Launch failed: ${'$'}{it.message}") }
+                    .onFailure { toast("Launch failed: ${it.message}") }
             }
         }
     }
@@ -876,7 +885,7 @@ class MainActivity : ComponentActivity() {
             if (err != null) { toast(err); return }
             editingId = null; editingSpec = null
             reload()
-            toast("Verified — ${'$'}{p.name} launches correctly")
+            toast("Verified — ${p.name} launches correctly")
         } else {
             toast("Left unverified. Adjust the intent and test again.")
         }
@@ -921,15 +930,19 @@ class MainActivity : ComponentActivity() {
         app.profiles.save(app.catalogue.profileFor(system, emu, order))?.let { toast(it) }
         reload()
         toast(
-            if (emu == null) "Added ${'$'}{system.name} — set its emulator and folder in Settings"
-            else "Added ${'$'}{system.name} using ${'$'}{emu.name}"
+            if (emu == null) "Added ${system.name} — set its emulator and folder in Settings"
+            else "Added ${system.name} using ${emu.name}"
         )
     }
 
-    private fun pickTheme(id: String?) {
-        app.themes.selectedId = id
-        toast(if (id == null) "Reset to the built-in theme" else "Theme: ${'$'}id")
-        recreate()
+    private fun pickColorTheme(name: String?) {
+        val err = app.config.set(
+            org.lighthouse.data.LauncherConfig.KEY_COLOR_THEME,
+            name?.takeIf { it != org.lighthouse.theme.ColorThemes.DEFAULT_NAME },
+        )
+        if (err != null) { toast(err); return }
+        colorEpoch++
+        toast(if (name == null) "Using the default colours" else "Colours: " + name)
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()

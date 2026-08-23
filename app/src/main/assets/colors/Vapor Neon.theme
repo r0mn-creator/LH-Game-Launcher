@@ -1,0 +1,6 @@
+// Vapor Neon  —  synthwave arcade
+// Deep violet foundation, high-voltage magenta, neon lime.
+--main:      #130F26;   // deep midnight violet
+--secondary: #251E3E;   // dark plum
+--accent:    #FF007F;   // neon magenta
+--highlight: #39FF14;   // neon lime green

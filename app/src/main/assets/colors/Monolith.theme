@@ -1,0 +1,6 @@
+// Monolith  —  minimalist monochrome
+// Clean greyscale accented by crisp white for clutter-free navigation.
+--main:      #0A0A0A;   // true matte black
+--secondary: #1A1A1A;   // dark graphite
+--accent:    #737373;   // neutral mid-grey
+--highlight: #FFFFFF;   // pure white

@@ -39,15 +39,15 @@ import org.lighthouse.theme.LocalTheme
 
 enum class Pane { RAIL, CONTENT }
 
-data class SettingsCategory(val id: String, val label: String, val glyph: String)
+data class SettingsCategory(val id: String, val label: String)
 
 val SETTINGS_CATEGORIES = listOf(
-    SettingsCategory("consoles", "Consoles", "🎮"),
-    SettingsCategory("library", "Library", "☁"),
-    SettingsCategory("add", "Add a system", "+"),
-    SettingsCategory("appearance", "Appearance", "🎨"),
-    SettingsCategory("problems", "Problems", "⚠"),
-    SettingsCategory("about", "About", "ℹ"),
+    SettingsCategory("consoles", "Consoles"),
+    SettingsCategory("library", "Library"),
+    SettingsCategory("add", "Add a system"),
+    SettingsCategory("themes", "Themes"),
+    SettingsCategory("problems", "Problems"),
+    SettingsCategory("about", "About"),
 )
 
 @Composable
@@ -151,7 +151,15 @@ private fun CategoryRail(
                     .padding(horizontal = 14.dp, vertical = 13.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(c.glyph, fontSize = 17.sp)
+                // A selection bar rather than an icon: no emoji, and it reads
+                // clearly at a glance on a handheld.
+                Box(
+                    Modifier
+                        .width(3.dp)
+                        .height(20.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(if (on) theme.primary else Color.Transparent)
+                )
                 Spacer(Modifier.width(14.dp))
                 Text(
                     c.label,

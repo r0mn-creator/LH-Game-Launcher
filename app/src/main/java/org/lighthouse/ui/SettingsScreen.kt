@@ -9,8 +9,9 @@ import org.lighthouse.data.CatalogueSystem
 data class SettingsState(
     val platforms: List<PlatformRowState>,
     val catalogue: List<CatalogueRowState>,
-    val themes: List<String>,
-    val activeTheme: String?,
+    val colorThemes: List<String>,
+    val activeColorTheme: String,
+    val colorProblems: Map<String, String>,
     val gamesTotal: Int,
     val gamesPlayable: Int,
     val problems: Map<String, String>,

@@ -25,7 +25,8 @@ class MenuTree(
         fun setEnabled(platformId: String, enabled: Boolean)
         fun remove(platformId: String)
         fun addSystem(system: CatalogueSystem)
-        fun pickTheme(id: String?)
+        fun pickColorTheme(name: String?)
+        fun openColorFolder()
     }
 
     fun nodeFor(path: List<String>): MenuNode = when {
@@ -35,7 +36,9 @@ class MenuTree(
         path[0] == "consoles" && path.size == 1 -> consoles()
         path[0] == "consoles" -> platform(path[1])
         path[0] == "add" -> addSystem()
-        path[0] == "appearance" -> appearance()
+        path[0] == "themes" && path.size == 1 -> themes()
+        path[0] == "themes" -> colors()
+        path[0] == "appearance" -> themes()
         path[0] == "problems" -> problems()
         else -> root()
     }
@@ -160,19 +163,35 @@ class MenuTree(
         },
     )
 
-    private fun appearance() = MenuNode(
-        id = "appearance", title = "Appearance",
+    private fun themes() = MenuNode(
+        id = "themes", title = "Themes",
+        items = listOf(
+            MenuItem.Submenu("colors", "Colours",
+                state.activeColorTheme,
+                badge = state.colorProblems.size.takeIf { it > 0 }?.let { "$it broken" }),
+            MenuItem.Note("Layout themes — changing where things sit on screen, not just " +
+                "their colour — are planned for a later version."),
+        ),
+    )
+
+    private fun colors() = MenuNode(
+        id = "colors", title = "Colours",
+        subtitle = "One file per theme in themes/colors — the file name is the theme name",
         items = buildList {
-            add(MenuItem.Note("Colours and fonts for now. Themes that change the whole " +
-                "layout are planned for a later version."))
-            state.themes.forEach { t ->
-                add(MenuItem.Action(t, if (t == state.activeTheme) "Active" else null) {
-                    actions.pickTheme(t)
+            state.colorThemes.forEach { name ->
+                add(MenuItem.Action(name,
+                    if (name == state.activeColorTheme) "Active" else null) {
+                    actions.pickColorTheme(name)
                 })
             }
-            add(MenuItem.Action("Reset to defaults", "Use the built-in theme") {
-                actions.pickTheme(null)
+            add(MenuItem.Action("Where these live", "Add your own by dropping a .theme file in") {
+                actions.openColorFolder()
             })
+            state.colorProblems.forEach { (f, why) ->
+                add(MenuItem.Note(f, why))
+            }
+            add(MenuItem.Note("A theme is four lines: --main, --secondary, --accent and " +
+                "--highlight. Everything else is derived, and text contrast follows --main."))
         },
     )
 
