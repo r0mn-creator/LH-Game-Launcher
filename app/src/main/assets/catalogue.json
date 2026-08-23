@@ -12,227 +12,524 @@
   ],
   "systems": [
     {
-      "id": "dreamcast", "name": "Sega - Dreamcast", "short_name": "DC",
-      "year": 1998, "aspect_ratio": "1:1",
-      "extensions": ["gdi", "cdi", "chd", "cue"],
+      "id": "dreamcast",
+      "name": "Sega - Dreamcast",
+      "short_name": "DC",
+      "year": 1998,
+      "aspect_ratio": "1:1",
+      "extensions": [
+        "gdi",
+        "cdi",
+        "chd",
+        "cue"
+      ],
       "emulators": [
-        { "package": "io.recompiled.redream", "name": "redream",
-          "launch": { "component": "io.recompiled.redream",
-                      "action": "android.intent.action.VIEW",
-                      "rom_mode": "data_uri",
-                      "flags": ["GRANT_READ_URI_PERMISSION", "NEW_TASK"] } }
+        {
+          "package": "io.recompiled.redream",
+          "name": "redream",
+          "launch": {
+            "component": "io.recompiled.redream",
+            "action": "android.intent.action.VIEW",
+            "rom_mode": "data_uri",
+            "flags": [
+              "GRANT_READ_URI_PERMISSION",
+              "NEW_TASK"
+            ]
+          }
+        }
       ]
     },
     {
-      "id": "ps2", "name": "Sony - PlayStation 2", "short_name": "PS2",
-      "year": 2000, "aspect_ratio": "3:4",
-      "extensions": ["iso", "chd", "bin", "cso", "gz"],
+      "id": "ps2",
+      "name": "Sony - PlayStation 2",
+      "short_name": "PS2",
+      "year": 2000,
+      "aspect_ratio": "3:4",
+      "extensions": [
+        "iso",
+        "chd",
+        "bin",
+        "cso",
+        "gz"
+      ],
       "emulators": [
-        { "package": "xyz.aethersx2.android", "name": "AetherSX2",
-          "launch": { "component": "xyz.aethersx2.android",
-                      "action": "android.intent.action.VIEW",
-                      "rom_mode": "data_uri",
-                      "flags": ["GRANT_READ_URI_PERMISSION", "NEW_TASK"] } }
+        {
+          "package": "xyz.aethersx2.android",
+          "name": "AetherSX2",
+          "launch": {
+            "component": "xyz.aethersx2.android",
+            "action": "android.intent.action.VIEW",
+            "rom_mode": "data_uri",
+            "flags": [
+              "GRANT_READ_URI_PERMISSION",
+              "NEW_TASK"
+            ]
+          }
+        }
       ]
     },
     {
-      "id": "gc", "name": "Nintendo - GameCube", "short_name": "GC",
-      "year": 2001, "aspect_ratio": "3:4",
-      "extensions": ["iso", "gcm", "ciso", "rvz", "7z"],
+      "id": "gc",
+      "name": "Nintendo - GameCube",
+      "short_name": "GC",
+      "year": 2001,
+      "aspect_ratio": "3:4",
+      "extensions": [
+        "iso",
+        "gcm",
+        "ciso",
+        "rvz",
+        "7z"
+      ],
       "emulators": [
-        { "package": "org.dolphinemu.dolphinemu", "name": "Dolphin",
+        {
+          "package": "org.dolphinemu.dolphinemu",
+          "name": "Dolphin",
           "verified": true,
-          "launch": { "component": "org.dolphinemu.dolphinemu/.ui.main.MainActivity",
-                      "action": "android.intent.action.MAIN",
-                      "rom_mode": "extra", "rom_extra": "AutoStartFile",
-                      "flags": ["GRANT_READ_URI_PERMISSION", "NEW_TASK"] } }
+          "launch": {
+            "component": "org.dolphinemu.dolphinemu/.ui.main.MainActivity",
+            "action": "android.intent.action.MAIN",
+            "rom_mode": "extra",
+            "rom_extra": "AutoStartFile",
+            "flags": [
+              "GRANT_READ_URI_PERMISSION",
+              "NEW_TASK"
+            ]
+          }
+        }
       ]
     },
     {
-      "id": "xbox", "name": "Microsoft - Xbox", "short_name": "Xbox",
-      "year": 2001, "aspect_ratio": "3:4",
-      "extensions": ["iso", "xiso", "xbe"],
+      "id": "xbox",
+      "name": "Microsoft - Xbox",
+      "short_name": "Xbox",
+      "year": 2001,
+      "aspect_ratio": "3:4",
+      "extensions": [
+        "iso",
+        "xiso",
+        "xbe"
+      ],
       "emulators": [
-        { "package": "com.izzy2lost.x1box", "name": "X1-BOX", "verified": true,
-          "launch": { "component": "com.izzy2lost.x1box/.LauncherActivity",
-                      "action": "android.intent.action.VIEW",
-                      "rom_mode": "data_uri",
-                      "flags": ["GRANT_READ_URI_PERMISSION", "NEW_TASK"] } },
-        { "package": "org.xemucae", "name": "XemuCAE",
-          "launch": { "component": "org.xemucae/.LauncherActivity",
-                      "action": "android.intent.action.VIEW",
-                      "rom_mode": "data_uri",
-                      "flags": ["GRANT_READ_URI_PERMISSION", "NEW_TASK"] } }
-      ]
-    },
-    {
-      "id": "gba", "name": "Nintendo - Game Boy Advance", "short_name": "GBA",
-      "year": 2001, "aspect_ratio": "1:1",
-      "extensions": ["gba", "zip", "7z"],
-      "emulators": [
-        { "package": "com.fastemulator.gba", "name": "My Boy!",
-          "launch": { "component": "com.fastemulator.gba",
-                      "action": "android.intent.action.VIEW",
-                      "rom_mode": "data_uri",
-                      "flags": ["GRANT_READ_URI_PERMISSION", "NEW_TASK"] } },
-        { "package": "com.retroarch.aarch64", "name": "RetroArch" }
-      ]
-    },
-    {
-      "id": "ngage", "name": "Nokia - N-Gage", "short_name": "N-GAGE",
-      "year": 2003, "aspect_ratio": "3:4",
-      "extensions": ["n-gage", "app", "sis"],
-      "emulators": []
-    },
-    {
-      "id": "ds", "name": "Nintendo - DS", "short_name": "DS",
-      "year": 2004, "aspect_ratio": "8:7",
-      "extensions": ["nds", "zip", "7z"],
-      "emulators": [
-        { "package": "com.dsemu.drastic", "name": "DraStic",
-          "launch": { "component": "com.dsemu.drastic",
-                      "action": "android.intent.action.VIEW",
-                      "rom_mode": "data_uri",
-                      "flags": ["GRANT_READ_URI_PERMISSION", "NEW_TASK"] } }
-      ]
-    },
-    {
-      "id": "psp", "name": "Sony - PlayStation Portable", "short_name": "PSP",
-      "year": 2004, "aspect_ratio": "3:5",
-      "extensions": ["iso", "cso", "chd", "pbp"],
-      "emulators": [
-        { "package": "org.ppsspp.ppsspp", "name": "PPSSPP",
-          "launch": { "component": "org.ppsspp.ppsspp",
-                      "action": "android.intent.action.VIEW",
-                      "rom_mode": "data_uri",
-                      "flags": ["GRANT_READ_URI_PERMISSION", "NEW_TASK"] } }
-      ]
-    },
-    {
-      "id": "xbox360", "name": "Microsoft - Xbox 360", "short_name": "Xbox 360",
-      "year": 2005, "aspect_ratio": "3:4",
-      "extensions": ["iso", "xex", "zar"],
-      "emulators": [
-        { "package": "org.xeniaae.aex", "name": "Xenia AE (Canary AEX)",
+        {
+          "package": "com.izzy2lost.x1box",
+          "name": "X1-BOX",
           "verified": true,
-          "launch": { "component": "org.xeniaae.aex/org.xeniaae.EmulatorActivity",
-                      "action": "android.intent.action.VIEW",
-                      "type": "application/octet-stream",
-                      "rom_mode": "data_uri",
-                      "flags": ["GRANT_READ_URI_PERMISSION", "NEW_TASK"],
-                      "extras": [{ "key": "game_title", "type": "string", "value": "{title}" }] } },
-        { "package": "org.xeniaae", "name": "Xenia AE (stable)" },
-        { "package": "aenu.ax360e.free", "name": "ax360e" }
+          "launch": {
+            "component": "com.izzy2lost.x1box/.LauncherActivity",
+            "action": "android.intent.action.VIEW",
+            "rom_mode": "data_uri",
+            "flags": [
+              "GRANT_READ_URI_PERMISSION",
+              "NEW_TASK"
+            ]
+          }
+        },
+        {
+          "package": "org.xemucae",
+          "name": "XemuCAE",
+          "launch": {
+            "component": "org.xemucae/.LauncherActivity",
+            "action": "android.intent.action.VIEW",
+            "rom_mode": "data_uri",
+            "flags": [
+              "GRANT_READ_URI_PERMISSION",
+              "NEW_TASK"
+            ]
+          }
+        }
       ]
     },
     {
-      "id": "ps3", "name": "Sony - PlayStation 3", "short_name": "PS3",
-      "year": 2006, "aspect_ratio": "3:4",
-      "extensions": ["iso", "pkg", "bin", "self"],
+      "id": "gba",
+      "name": "Nintendo - Game Boy Advance",
+      "short_name": "GBA",
+      "year": 2001,
+      "aspect_ratio": "1:1",
+      "extensions": [
+        "gba",
+        "zip",
+        "7z"
+      ],
       "emulators": [
-        { "package": "net.rpcsx", "name": "RPCSX" }
+        {
+          "package": "com.fastemulator.gba",
+          "name": "My Boy!",
+          "launch": {
+            "component": "com.fastemulator.gba",
+            "action": "android.intent.action.VIEW",
+            "rom_mode": "data_uri",
+            "flags": [
+              "GRANT_READ_URI_PERMISSION",
+              "NEW_TASK"
+            ]
+          }
+        },
+        {
+          "package": "com.retroarch.aarch64",
+          "name": "RetroArch"
+        }
       ]
     },
     {
-      "id": "wii", "name": "Nintendo - Wii", "short_name": "WII",
-      "year": 2006, "aspect_ratio": "3:4",
-      "extensions": ["iso", "wbfs", "rvz", "wad", "7z"],
+      "id": "ngage",
+      "name": "Nokia - N-Gage",
+      "short_name": "N-GAGE",
+      "year": 2003,
+      "aspect_ratio": "3:4",
+      "extensions": [
+        "n-gage",
+        "app",
+        "sis"
+      ],
+      "emulators": []
+    },
+    {
+      "id": "ds",
+      "name": "Nintendo - DS",
+      "short_name": "DS",
+      "year": 2004,
+      "aspect_ratio": "8:7",
+      "extensions": [
+        "nds",
+        "zip",
+        "7z"
+      ],
       "emulators": [
-        { "package": "org.dolphinemu.dolphinemu", "name": "Dolphin",
+        {
+          "package": "com.dsemu.drastic",
+          "name": "DraStic",
+          "launch": {
+            "component": "com.dsemu.drastic",
+            "action": "android.intent.action.VIEW",
+            "rom_mode": "data_uri",
+            "flags": [
+              "GRANT_READ_URI_PERMISSION",
+              "NEW_TASK"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "psp",
+      "name": "Sony - PlayStation Portable",
+      "short_name": "PSP",
+      "year": 2004,
+      "aspect_ratio": "3:5",
+      "extensions": [
+        "iso",
+        "cso",
+        "chd",
+        "pbp"
+      ],
+      "emulators": [
+        {
+          "package": "org.ppsspp.ppsspp",
+          "name": "PPSSPP",
+          "launch": {
+            "component": "org.ppsspp.ppsspp",
+            "action": "android.intent.action.VIEW",
+            "rom_mode": "data_uri",
+            "flags": [
+              "GRANT_READ_URI_PERMISSION",
+              "NEW_TASK"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "xbox360",
+      "name": "Microsoft - Xbox 360",
+      "short_name": "Xbox 360",
+      "year": 2005,
+      "aspect_ratio": "3:4",
+      "extensions": [
+        "iso",
+        "xex",
+        "zar"
+      ],
+      "emulators": [
+        {
+          "package": "org.xeniaae.aex",
+          "name": "Xenia AE (Canary AEX)",
           "verified": true,
-          "launch": { "component": "org.dolphinemu.dolphinemu/.ui.main.MainActivity",
-                      "action": "android.intent.action.MAIN",
-                      "rom_mode": "extra", "rom_extra": "AutoStartFile",
-                      "flags": ["GRANT_READ_URI_PERMISSION", "NEW_TASK"] } }
+          "launch": {
+            "component": "org.xeniaae.aex/org.xeniaae.EmulatorActivity",
+            "action": "android.intent.action.VIEW",
+            "type": "application/octet-stream",
+            "rom_mode": "data_uri",
+            "flags": [
+              "GRANT_READ_URI_PERMISSION",
+              "NEW_TASK"
+            ],
+            "extras": [
+              {
+                "key": "game_title",
+                "type": "string",
+                "value": "{title}"
+              }
+            ]
+          }
+        },
+        {
+          "package": "org.xeniaae",
+          "name": "Xenia AE (stable)"
+        },
+        {
+          "package": "aenu.ax360e.free",
+          "name": "ax360e"
+        }
       ]
     },
     {
-      "id": "vita", "name": "Sony - PlayStation Vita", "short_name": "VITA",
-      "year": 2011, "aspect_ratio": "3:4",
-      "extensions": ["vpk", "zip"],
+      "id": "ps3",
+      "name": "Sony - PlayStation 3",
+      "short_name": "PS3",
+      "year": 2006,
+      "aspect_ratio": "3:4",
+      "extensions": [
+        "iso",
+        "pkg",
+        "bin",
+        "self"
+      ],
       "emulators": [
-        { "package": "org.vita3k.emulator", "name": "Vita3K" }
+        {
+          "package": "net.rpcsx",
+          "name": "RPCSX"
+        }
       ]
     },
     {
-      "id": "3ds", "name": "Nintendo - 3DS", "short_name": "3DS",
-      "year": 2011, "aspect_ratio": "8:7",
-      "extensions": ["3ds", "cci", "cxi", "app", "cia"],
+      "id": "wii",
+      "name": "Nintendo - Wii",
+      "short_name": "WII",
+      "year": 2006,
+      "aspect_ratio": "3:4",
+      "extensions": [
+        "iso",
+        "wbfs",
+        "rvz",
+        "wad",
+        "7z"
+      ],
       "emulators": [
-        { "package": "io.github.lime3ds.android", "name": "Lime3DS" },
-        { "package": "io.github.mandarine3ds.mandarine", "name": "Mandarine" }
+        {
+          "package": "org.dolphinemu.dolphinemu",
+          "name": "Dolphin",
+          "verified": true,
+          "launch": {
+            "component": "org.dolphinemu.dolphinemu/.ui.main.MainActivity",
+            "action": "android.intent.action.MAIN",
+            "rom_mode": "extra",
+            "rom_extra": "AutoStartFile",
+            "flags": [
+              "GRANT_READ_URI_PERMISSION",
+              "NEW_TASK"
+            ]
+          }
+        }
       ]
     },
     {
-      "id": "wiiu", "name": "Nintendo - Wii U", "short_name": "WIIU",
-      "year": 2012, "aspect_ratio": "3:4",
-      "extensions": ["wud", "wux", "rpx", "wua"],
+      "id": "vita",
+      "name": "Sony - PlayStation Vita",
+      "short_name": "VITA",
+      "year": 2011,
+      "aspect_ratio": "3:4",
+      "extensions": [
+        "vpk",
+        "zip"
+      ],
       "emulators": [
-        { "package": "info.cemu.cemu", "name": "Cemu" }
+        {
+          "package": "org.vita3k.emulator",
+          "name": "Vita3K"
+        }
       ]
     },
     {
-      "id": "ps4", "name": "Sony - PlayStation 4", "short_name": "PS4",
-      "year": 2013, "aspect_ratio": "3:4",
-      "extensions": ["pkg", "iso"],
-      "emulators": []
-    },
-    {
-      "id": "xboxone", "name": "Microsoft - Xbox One", "short_name": "XBONE",
-      "year": 2013, "aspect_ratio": "3:4",
-      "extensions": ["iso"],
-      "emulators": []
-    },
-    {
-      "id": "switch", "name": "Nintendo - Switch", "short_name": "NS",
-      "year": 2017, "aspect_ratio": "3:5",
-      "extensions": ["nsp", "xci", "nca", "nro"],
+      "id": "3ds",
+      "name": "Nintendo - 3DS",
+      "short_name": "3DS",
+      "year": 2011,
+      "aspect_ratio": "8:7",
+      "extensions": [
+        "3ds",
+        "cci",
+        "cxi",
+        "app",
+        "cia"
+      ],
       "emulators": [
-        { "package": "dev.eden.eden_emulator", "name": "Eden" },
-        { "package": "org.citron.citron_emu", "name": "Citron" },
-        { "package": "org.sudachi.sudachi_emu", "name": "Sudachi" },
-        { "package": "org.kenjinx.android", "name": "Kenji-NX" }
+        {
+          "package": "io.github.lime3ds.android",
+          "name": "Lime3DS"
+        },
+        {
+          "package": "io.github.mandarine3ds.mandarine",
+          "name": "Mandarine"
+        }
       ]
     },
     {
-      "id": "ps5", "name": "Sony - PlayStation 5", "short_name": "PS5",
-      "year": 2020, "aspect_ratio": "3:4",
-      "extensions": ["pkg"],
+      "id": "wiiu",
+      "name": "Nintendo - Wii U",
+      "short_name": "WIIU",
+      "year": 2012,
+      "aspect_ratio": "3:4",
+      "extensions": [
+        "wud",
+        "wux",
+        "rpx",
+        "wua"
+      ],
+      "emulators": [
+        {
+          "package": "info.cemu.cemu",
+          "name": "Cemu"
+        }
+      ]
+    },
+    {
+      "id": "ps4",
+      "name": "Sony - PlayStation 4",
+      "short_name": "PS4",
+      "year": 2013,
+      "aspect_ratio": "3:4",
+      "extensions": [
+        "pkg",
+        "iso"
+      ],
       "emulators": []
     },
     {
-      "id": "xboxseries", "name": "Microsoft - Xbox Series X|S", "short_name": "XBSX",
-      "year": 2020, "aspect_ratio": "3:4",
-      "extensions": ["iso"],
+      "id": "xboxone",
+      "name": "Microsoft - Xbox One",
+      "short_name": "XBONE",
+      "year": 2013,
+      "aspect_ratio": "3:4",
+      "extensions": [
+        "iso"
+      ],
       "emulators": []
     },
     {
-      "id": "switch2", "name": "Nintendo - Switch 2", "short_name": "NS2",
-      "year": 2025, "aspect_ratio": "3:5",
-      "extensions": ["nsp", "xci"],
+      "id": "switch",
+      "name": "Nintendo - Switch",
+      "short_name": "NS",
+      "year": 2017,
+      "aspect_ratio": "3:5",
+      "extensions": [
+        "nsp",
+        "xci",
+        "nca",
+        "nro"
+      ],
+      "emulators": [
+        {
+          "package": "dev.eden.eden_emulator",
+          "name": "Eden"
+        },
+        {
+          "package": "org.citron.citron_emu",
+          "name": "Citron"
+        },
+        {
+          "package": "org.sudachi.sudachi_emu",
+          "name": "Sudachi"
+        },
+        {
+          "package": "org.kenjinx.android",
+          "name": "Kenji-NX"
+        }
+      ]
+    },
+    {
+      "id": "ps5",
+      "name": "Sony - PlayStation 5",
+      "short_name": "PS5",
+      "year": 2020,
+      "aspect_ratio": "3:4",
+      "extensions": [
+        "pkg"
+      ],
       "emulators": []
     },
     {
-      "id": "windows", "name": "Microsoft - Windows", "short_name": "WIN",
-      "year": 2000, "aspect_ratio": "3:4",
+      "id": "xboxseries",
+      "name": "Microsoft - Xbox Series X|S",
+      "short_name": "XBSX",
+      "year": 2020,
+      "aspect_ratio": "3:4",
+      "extensions": [
+        "iso"
+      ],
+      "emulators": []
+    },
+    {
+      "id": "switch2",
+      "name": "Nintendo - Switch 2",
+      "short_name": "NS2",
+      "year": 2025,
+      "aspect_ratio": "3:5",
+      "extensions": [
+        "nsp",
+        "xci"
+      ],
+      "emulators": []
+    },
+    {
+      "id": "windows",
+      "name": "Microsoft - Windows",
+      "short_name": "WIN",
+      "year": 2000,
+      "aspect_ratio": "2:3",
       "extensions": [],
       "emulators": [
-        { "package": "app.gamenative", "name": "GameNative",
-          "launch": { "component": "app.gamenative/.MainActivity",
-                      "action": "app.gamenative.LAUNCH_GAME",
-                      "rom_mode": "none",
-                      "flags": ["NEW_TASK", "CLEAR_TOP"],
-                      "extras": [
-                        { "key": "app_id", "type": "int", "value": "{id}" },
-                        { "key": "game_source", "type": "string", "value": "STEAM" }
-                      ] } },
-        { "package": "com.winlator", "name": "Winlator" },
-        { "package": "com.gamesir.gamehub", "name": "GameHub" }
+        {
+          "package": "app.gamenative",
+          "name": "GameNative",
+          "launch": {
+            "component": "app.gamenative/.MainActivity",
+            "action": "app.gamenative.LAUNCH_GAME",
+            "rom_mode": "none",
+            "flags": [
+              "NEW_TASK",
+              "CLEAR_TOP"
+            ],
+            "extras": [
+              {
+                "key": "app_id",
+                "type": "int",
+                "value": "{id}"
+              },
+              {
+                "key": "game_source",
+                "type": "string",
+                "value": "STEAM"
+              }
+            ]
+          }
+        },
+        {
+          "package": "com.winlator",
+          "name": "Winlator"
+        },
+        {
+          "package": "com.gamesir.gamehub",
+          "name": "GameHub"
+        }
       ]
     },
     {
-      "id": "android", "name": "Android", "short_name": "ANDROID",
-      "year": 2008, "aspect_ratio": "2:3",
+      "id": "android",
+      "name": "Android",
+      "short_name": "ANDROID",
+      "year": 2008,
+      "aspect_ratio": "2:3",
       "extensions": [],
       "emulators": []
     }

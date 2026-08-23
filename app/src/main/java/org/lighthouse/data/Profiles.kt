@@ -46,6 +46,14 @@ data class SourceSpec(
     val ignore: List<String> = emptyList(),
     /** `library` / `shortcuts`: which app to read from. */
     val app: String? = null,
+    /**
+     * `installed_apps`: the CURATED list of packages to show.
+     *
+     * Android has no ROM folder, so this section is a hand-picked shelf rather
+     * than a scan. Listing every launchable app would bury the handful of games
+     * the user actually wants among a hundred utilities.
+     */
+    val packages: List<String> = emptyList(),
 ) {
     companion object {
         const val FOLDER = "folder"

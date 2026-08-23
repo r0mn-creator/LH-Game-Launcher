@@ -25,6 +25,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,6 +37,28 @@ import org.lighthouse.data.PlatformProfile
 import org.lighthouse.theme.LocalTheme
 import java.io.File
 
+/** Launcher icon for an Android-section entry, or null for everything else. */
+@Composable
+private fun DisplayGame.androidIcon(): androidx.compose.ui.graphics.ImageBitmap? {
+    val pkg = entry?.id ?: return null
+    if (entry?.uri != null) return null          // file-backed, not an app
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    return remember(pkg) {
+        runCatching {
+            val d = ctx.packageManager.getApplicationIcon(pkg)
+            val bmp = android.graphics.Bitmap.createBitmap(
+                d.intrinsicWidth.coerceAtLeast(1),
+                d.intrinsicHeight.coerceAtLeast(1),
+                android.graphics.Bitmap.Config.ARGB_8888,
+            )
+            val c = android.graphics.Canvas(bmp)
+            d.setBounds(0, 0, c.width, c.height)
+            d.draw(c)
+            bmp.asImageBitmap()
+        }.getOrNull()
+    }
+}
+
 /** One system page: its profile, its games, and anything the user must know. */
 data class SystemPage(
     val profile: PlatformProfile,
@@ -46,6 +69,18 @@ data class SystemPage(
 )
 
 private const val COLUMNS = 5
+
+/**
+ * "3:4" -> 0.75 (width / height). Systems genuinely differ: 3:4 discs, 1:1
+ * squares, 8:7 DS/3DS, 3:5 tall PSP/Switch, 2:3 Android posters. Rendering
+ * every one at the same ratio crops or stretches most of them.
+ */
+private fun aspectOf(spec: String): Float {
+    val parts = spec.split(":")
+    val w = parts.getOrNull(0)?.toFloatOrNull() ?: 3f
+    val h = parts.getOrNull(1)?.toFloatOrNull() ?: 4f
+    return if (h <= 0f) 0.75f else (w / h).coerceIn(0.4f, 2.0f)
+}
 
 @Composable
 fun HomeScreen(
@@ -212,8 +247,10 @@ private fun CoverGrid(
         horizontalArrangement = Arrangement.spacedBy(18.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp),
     ) {
+        val aspect = aspectOf(page.profile.aspectRatio)
         itemsIndexed(page.games) { i, g ->
-            CoverTile(g, focused = i == cursor.index, showBadge = perTileBadges) { onLaunch(g) }
+            CoverTile(g, focused = i == cursor.index, showBadge = perTileBadges,
+                aspect = aspect) { onLaunch(g) }
         }
     }
 }
@@ -223,6 +260,7 @@ private fun CoverTile(
     game: DisplayGame,
     focused: Boolean,
     showBadge: Boolean,
+    aspect: Float,
     onLaunch: () -> Unit,
 ) {
     val theme = LocalTheme.current
@@ -239,7 +277,7 @@ private fun CoverTile(
         Box(
             Modifier
                 .fillMaxWidth()
-                .aspectRatio(0.72f)
+                .aspectRatio(aspect)
                 .clip(RoundedCornerShape(10.dp))
                 .background(theme.surfaceVariant)
                 .then(
@@ -248,12 +286,22 @@ private fun CoverTile(
                 )
         ) {
             val cover = game.coverPath?.let { File(it) }?.takeIf { it.isFile }
+            val appIcon = if (cover == null) game.androidIcon() else null
             if (cover != null) {
                 AsyncImage(
                     model = cover,
                     contentDescription = game.title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize(),
+                )
+            } else if (appIcon != null) {
+                // No poster scraped yet: the launcher icon is a better
+                // placeholder than two letters, and makes the shelf usable now.
+                Image(
+                    painter = androidx.compose.ui.graphics.painter.BitmapPainter(appIcon),
+                    contentDescription = game.title,
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier.fillMaxSize().padding(22.dp),
                 )
             } else {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {

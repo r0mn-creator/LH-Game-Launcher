@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity() {
     private var cursor by mutableStateOf(GridCursor())
     private var pendingFolderFor: String? = null
     private var showSettings by mutableStateOf(false)
+    private var showAppPicker by mutableStateOf(false)
     /**
      * Systems still waiting for a folder, walked one picker at a time.
      *
@@ -93,6 +94,10 @@ class MainActivity : ComponentActivity() {
                         onAddSystem = ::addSystem,
                         onRemovePlatform = ::removePlatform,
                         onPickTheme = ::pickTheme,
+                        onChooseApps = { showAppPicker = true },
+                        onToggleApp = ::toggleApp,
+                        onCloseAppPicker = { showAppPicker = false; reload() },
+                        onCycleAspect = ::cycleAspect,
                     )
                 } else {
                     HomeScreen(
@@ -221,7 +226,11 @@ class MainActivity : ComponentActivity() {
                     chooseFolder(page.profile.id)
                 }
             }
-            Nav.BACK -> if (showSettings) showSettings = false   // else: a launcher has nowhere to go
+            Nav.BACK -> when {
+                showAppPicker -> { showAppPicker = false; reload() }
+                showSettings -> showSettings = false
+                else -> Unit          // a launcher has nowhere to go back to
+            }
             Nav.MENU -> showSettings = !showSettings
             Nav.SEARCH -> toast("Search is not built yet")
         }
@@ -341,6 +350,9 @@ class MainActivity : ComponentActivity() {
                 verified = pg.profile.verified,
                 needsFolder = pg.profile.source.provider == org.lighthouse.data.SourceSpec.FOLDER &&
                     FolderPicker.needsFolder(this, pg.profile.source.roots),
+                isAppShelf = pg.profile.source.provider ==
+                    org.lighthouse.data.SourceSpec.INSTALLED_APPS,
+                aspectRatio = pg.profile.aspectRatio,
                 enabled = pg.profile.enabled,
                 problem = pg.problem,
             )
@@ -363,7 +375,41 @@ class MainActivity : ComponentActivity() {
             gamesTotal = pages.sumOf { it.games.size },
             gamesPlayable = pages.sumOf { pg -> pg.games.count { it.playable } },
             problems = loaded.problems,
+            appPicker = if (!showAppPicker) null else {
+                val chosen = appShelfProfile()?.source?.packages.orEmpty().toSet()
+                org.lighthouse.provider.InstalledAppsProvider.installedApps(this)
+                    .map { (pkg, label) -> AppChoice(pkg, label, pkg in chosen) }
+                    // Added ones first so the shelf is easy to review.
+                    .sortedWith(compareByDescending<AppChoice> { it.chosen }
+                        .thenBy { it.label.lowercase() })
+            },
         )
+    }
+
+    /** The installed_apps platform (the Android shelf), if one exists. */
+    private fun appShelfProfile(): PlatformProfile? =
+        app.profiles.load().profiles
+            .firstOrNull { it.source.provider == org.lighthouse.data.SourceSpec.INSTALLED_APPS }
+
+    /** The ratios real box art actually comes in. */
+    private val aspectPresets = listOf("3:4", "1:1", "8:7", "3:5", "2:3", "1:2")
+
+    private fun cycleAspect(id: String) {
+        val p = loadProfileById(id) ?: return
+        val i = aspectPresets.indexOf(p.aspectRatio)
+        val next = aspectPresets[(i + 1) % aspectPresets.size]
+        app.profiles.save(p.copy(aspectRatio = next))
+        reload()
+    }
+
+    private fun toggleApp(pkg: String, add: Boolean) {
+        val p = appShelfProfile() ?: run {
+            toast("Add the Android system first")
+            return
+        }
+        val next = if (add) (p.source.packages + pkg).distinct()
+                   else p.source.packages - pkg
+        app.profiles.save(p.copy(source = p.source.copy(packages = next)))
     }
 
     private fun togglePlatform(id: String, enabled: Boolean) {

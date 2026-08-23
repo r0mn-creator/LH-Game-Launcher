@@ -28,7 +28,12 @@ data class SettingsState(
     val gamesTotal: Int,
     val gamesPlayable: Int,
     val problems: Map<String, String>,
+    /** Non-null while the Android app picker is open. */
+    val appPicker: List<AppChoice>? = null,
 )
+
+/** One installed app in the Android-section picker. */
+data class AppChoice(val pkg: String, val label: String, val chosen: Boolean)
 
 data class PlatformRowState(
     val id: String,
@@ -39,6 +44,9 @@ data class PlatformRowState(
     val needsFolder: Boolean,
     val enabled: Boolean,
     val problem: String? = null,
+    /** installed_apps platform: curated shelf rather than a scanned folder. */
+    val isAppShelf: Boolean = false,
+    val aspectRatio: String = "3:4",
 )
 
 data class CatalogueRowState(
@@ -59,7 +67,15 @@ fun SettingsScreen(
     onAddSystem: (CatalogueSystem) -> Unit,
     onRemovePlatform: (String) -> Unit,
     onPickTheme: (String?) -> Unit,
+    onChooseApps: () -> Unit,
+    onToggleApp: (String, Boolean) -> Unit,
+    onCloseAppPicker: () -> Unit,
+    onCycleAspect: (String) -> Unit,
 ) {
+    if (state.appPicker != null) {
+        AppPicker(state.appPicker, onToggleApp, onCloseAppPicker)
+        return
+    }
     val theme = LocalTheme.current
     Column(
         Modifier
@@ -101,7 +117,10 @@ fun SettingsScreen(
             item { ActionRow("Rescan library", "Re-read every folder now", onRescan) }
 
             item { SectionHeader("Platforms") }
-            items(state.platforms) { p -> PlatformRow(p, onTogglePlatform, onChooseFolder, onRemovePlatform) }
+            items(state.platforms) { p ->
+                PlatformRow(p, onTogglePlatform, onChooseFolder, onRemovePlatform,
+                    onChooseApps, onCycleAspect)
+            }
 
             item { SectionHeader("Add a system") }
             item {
@@ -185,6 +204,8 @@ private fun PlatformRow(
     onToggle: (String, Boolean) -> Unit,
     onChooseFolder: (String) -> Unit,
     onRemove: (String) -> Unit,
+    onChooseApps: () -> Unit,
+    onCycleAspect: (String) -> Unit,
 ) {
     val theme = LocalTheme.current
     Row(
@@ -206,14 +227,26 @@ private fun PlatformRow(
             }
             val detail = when {
                 p.problem != null -> p.problem
+                p.isAppShelf -> "${p.games} apps added"
                 p.needsFolder -> "${p.games} games · needs folder access"
                 else -> "${p.playable} of ${p.games} playable"
             }
             Text(detail,
-                color = if (p.problem != null || p.needsFolder) theme.error else theme.textSecondary,
+                color = if (p.problem != null || (p.needsFolder && !p.isAppShelf)) theme.error
+                        else theme.textSecondary,
                 fontSize = 12.sp)
         }
-        if (p.needsFolder || p.problem != null) {
+        // Box art ratio is per-system data, not a constant: DVD keepcases are
+        // 3:4, handheld card cases 3:5, jewel cases 1:1, DS/3DS boxes 8:7 and
+        // storefront capsules 2:3. Tap to cycle - the value is always visible.
+        Pill(p.aspectRatio) { onCycleAspect(p.id) }
+        Spacer(Modifier.width(8.dp))
+        if (p.isAppShelf) {
+            // Android has no ROM folder - it is a curated shelf of installed
+            // apps, so the affordance is a picker, not a folder chooser.
+            Pill("Choose apps") { onChooseApps() }
+            Spacer(Modifier.width(8.dp))
+        } else if (p.needsFolder || p.problem != null) {
             Pill("Folder") { onChooseFolder(p.id) }
             Spacer(Modifier.width(8.dp))
         }
@@ -283,5 +316,53 @@ private fun Hint2(button: String, label: String, onClick: () -> Unit) {
         }
         Spacer(Modifier.width(7.dp))
         Text(label, color = theme.textPrimary, fontSize = 14.sp)
+    }
+}
+
+
+@Composable
+private fun AppPicker(
+    apps: List<AppChoice>,
+    onToggle: (String, Boolean) -> Unit,
+    onClose: () -> Unit,
+) {
+    val theme = LocalTheme.current
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(theme.background)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Choose apps", color = theme.textPrimary, fontSize = 22.sp,
+                fontWeight = FontWeight.Bold)
+            Spacer(Modifier.width(14.dp))
+            Text("${apps.count { it.chosen }} added", color = theme.textSecondary, fontSize = 13.sp)
+            Spacer(Modifier.weight(1f))
+            Hint2("B", "Done", onClose)
+        }
+        LazyColumn(
+            contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 40.dp)
+        ) {
+            items(apps) { a ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clickable { onToggle(a.pkg, !a.chosen) }
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(a.label, color = theme.textPrimary, fontSize = 15.sp)
+                        Text(a.pkg, color = theme.textSecondary, fontSize = 11.sp)
+                    }
+                    Pill(if (a.chosen) "Added" else "Add", danger = false) {
+                        onToggle(a.pkg, !a.chosen)
+                    }
+                }
+            }
+        }
     }
 }

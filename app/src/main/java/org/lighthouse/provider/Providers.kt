@@ -106,26 +106,52 @@ object FolderProvider : GameProvider {
             .ifBlank { fileName }
 }
 
-/** The "Android" section: installed apps with a launcher entry. */
+/**
+ * The "Android" section: a CURATED shelf of installed apps.
+ *
+ * There is no folder to scan here, so the section shows exactly the packages
+ * the user added and nothing else. Enumerating every launchable app would bury
+ * a handful of games under a hundred utilities.
+ */
 object InstalledAppsProvider : GameProvider {
     override val name = SourceSpec.INSTALLED_APPS
 
     override fun discover(context: Context, profile: PlatformProfile): Discovery {
+        val wanted = profile.source.packages
+        if (wanted.isEmpty()) {
+            return Discovery(
+                emptyList(),
+                listOf("No apps added yet. Settings ▸ Android ▸ Choose apps.")
+            )
+        }
+        val pm = context.packageManager
+        val games = mutableListOf<GameEntry>()
+        val missing = mutableListOf<String>()
+        for (pkg in wanted) {
+            val info = runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull()
+            if (info == null) { missing += pkg; continue }
+            games += GameEntry(
+                key = pkg,
+                title = pm.getApplicationLabel(info).toString(),
+                platformId = profile.id,
+                id = pkg,
+            )
+        }
+        val notes = if (missing.isEmpty()) emptyList()
+        else listOf("${missing.size} added app(s) are no longer installed: " +
+            missing.take(3).joinToString())
+        return Discovery(games.sortedBy { it.title.lowercase() }, notes)
+    }
+
+    /** Every launchable app, for the picker. */
+    fun installedApps(context: Context): List<Pair<String, String>> {
         val pm = context.packageManager
         val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val games = pm.queryIntentActivities(main, 0)
+        return pm.queryIntentActivities(main, 0)
             .filter { it.activityInfo.packageName != context.packageName }
-            .map {
-                GameEntry(
-                    key = it.activityInfo.packageName,
-                    title = it.loadLabel(pm).toString(),
-                    platformId = profile.id,
-                    id = it.activityInfo.packageName,
-                )
-            }
-            .distinctBy { it.key }
-            .sortedBy { it.title.lowercase() }
-        return Discovery(games)
+            .map { it.activityInfo.packageName to it.loadLabel(pm).toString() }
+            .distinctBy { it.first }
+            .sortedBy { it.second.lowercase() }
     }
 }
 
