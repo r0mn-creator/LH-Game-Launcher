@@ -82,7 +82,9 @@ object FolderPicker {
 
         val roots = (profile.source.roots + tree.toString()).distinct()
         val updated = profile.copy(source = profile.source.copy(roots = roots))
-        store.save(updated)
+        // A grant we cannot persist is worse than none: the UI would show the
+        // folder as set while every launch still failed.
+        if (store.save(updated) != null) return null
         return updated
     }
 

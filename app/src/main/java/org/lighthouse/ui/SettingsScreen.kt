@@ -71,6 +71,7 @@ fun SettingsScreen(
     onToggleApp: (String, Boolean) -> Unit,
     onCloseAppPicker: () -> Unit,
     onCycleAspect: (String) -> Unit,
+    onEditIntent: (String) -> Unit,
 ) {
     if (state.appPicker != null) {
         AppPicker(state.appPicker, onToggleApp, onCloseAppPicker)
@@ -119,7 +120,7 @@ fun SettingsScreen(
             item { SectionHeader("Platforms") }
             items(state.platforms) { p ->
                 PlatformRow(p, onTogglePlatform, onChooseFolder, onRemovePlatform,
-                    onChooseApps, onCycleAspect)
+                    onChooseApps, onCycleAspect, onEditIntent)
             }
 
             item { SectionHeader("Add a system") }
@@ -206,6 +207,7 @@ private fun PlatformRow(
     onRemove: (String) -> Unit,
     onChooseApps: () -> Unit,
     onCycleAspect: (String) -> Unit,
+    onEditIntent: (String) -> Unit,
 ) {
     val theme = LocalTheme.current
     Row(
@@ -240,6 +242,9 @@ private fun PlatformRow(
         // 3:4, handheld card cases 3:5, jewel cases 1:1, DS/3DS boxes 8:7 and
         // storefront capsules 2:3. Tap to cycle - the value is always visible.
         Pill(p.aspectRatio) { onCycleAspect(p.id) }
+        Spacer(Modifier.width(8.dp))
+        // The escape hatch Beacon never exposes: fix the launch yourself.
+        Pill("Intent") { onEditIntent(p.id) }
         Spacer(Modifier.width(8.dp))
         if (p.isAppShelf) {
             // Android has no ROM folder - it is a curated shelf of installed

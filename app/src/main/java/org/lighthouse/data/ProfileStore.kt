@@ -100,12 +100,31 @@ class ProfileStore(private val context: Context) {
         return Loaded(unique.sortedBy { it.order }, problems)
     }
 
-    fun save(p: PlatformProfile) {
-        if (!dir.exists()) dir.mkdirs()
-        File(dir, "${p.id}.json").writeText(json.encodeToString(PlatformProfile.serializer(), p))
+    /**
+     * @return null on success, or a human-readable reason.
+     *
+     * A launcher must not die because one file will not write. This actually
+     * happened: a profile copied onto the device by another tool was owned by a
+     * different uid, and the uncaught EACCES took the whole app down mid-edit.
+     */
+    fun save(p: PlatformProfile): String? {
+        return runCatching {
+            if (!dir.exists()) dir.mkdirs()
+            File(dir, "${p.id}.json")
+                .writeText(json.encodeToString(PlatformProfile.serializer(), p))
+            null
+        }.getOrElse { e ->
+            Log.e(TAG, "could not save ${p.id}", e)
+            when (e) {
+                is java.io.FileNotFoundException ->
+                    "${p.id}.json is not writable — it may be owned by another app or tool"
+                else -> "Could not save ${p.id}: ${e.message ?: e::class.simpleName}"
+            }
+        }
     }
 
-    fun delete(id: String): Boolean = File(dir, "$id.json").delete()
+    fun delete(id: String): Boolean =
+        runCatching { File(dir, "$id.json").delete() }.getOrDefault(false)
 
     private companion object { const val TAG = "LH.ProfileStore" }
 }

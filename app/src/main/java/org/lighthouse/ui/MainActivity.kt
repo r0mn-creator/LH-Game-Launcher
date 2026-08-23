@@ -43,6 +43,11 @@ class MainActivity : ComponentActivity() {
     private var pendingFolderFor: String? = null
     private var showSettings by mutableStateOf(false)
     private var showAppPicker by mutableStateOf(false)
+    /** Platform whose launch intent is being edited, and the working copy. */
+    private var editingId by mutableStateOf<String?>(null)
+    private var editingSpec by mutableStateOf<org.lighthouse.data.LaunchSpec?>(null)
+    /** Set while a test launch is out; answered when the user comes back. */
+    private var verifyFor by mutableStateOf<Pair<String, String>?>(null)
     /**
      * Systems still waiting for a folder, walked one picker at a time.
      *
@@ -54,6 +59,17 @@ class MainActivity : ComponentActivity() {
     private var setupTotal = 0
 
     private val app get() = LightHouseApp.instance
+
+    /**
+     * The editor's pending state has to OUTLIVE THE PROCESS.
+     *
+     * A test launch starts an emulator, and an emulator on a handheld will
+     * happily evict the launcher. Coming back to find the editor gone - and the
+     * verification question never asked - makes the feature unusable in exactly
+     * the case it exists for. So the pending answer is written to prefs before
+     * we leave, and picked up again in onCreate.
+     */
+    private val prefs get() = getSharedPreferences("lighthouse_ui", MODE_PRIVATE)
 
     private val folderPicker = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
@@ -82,7 +98,22 @@ class MainActivity : ComponentActivity() {
         setContent {
             val theme by remember { mutableStateOf(app.themes.active()) }
             CompositionLocalProvider(LocalTheme provides theme) {
-                if (showSettings) {
+                val ed = editingId
+                val vf = verifyFor
+                if (vf != null) {
+                    VerifyDialog(vf.second) { ok -> answerVerify(ok) }
+                } else if (ed != null && editingSpec != null) {
+                    IntentEditorScreen(
+                        state = editorState(ed, editingSpec!!),
+                        onChange = { editingSpec = it },
+                        onPickPackage = { pkg ->
+                            editingSpec = editingSpec?.copy(component = pkg)
+                        },
+                        onTest = ::testLaunch,
+                        onSave = ::saveEditing,
+                        onBack = { editingId = null; editingSpec = null },
+                    )
+                } else if (showSettings) {
                     SettingsScreen(
                         state = settingsState(),
                         onBack = { showSettings = false },
@@ -98,6 +129,7 @@ class MainActivity : ComponentActivity() {
                         onToggleApp = ::toggleApp,
                         onCloseAppPicker = { showAppPicker = false; reload() },
                         onCycleAspect = ::cycleAspect,
+                        onEditIntent = ::startEditing,
                     )
                 } else {
                     HomeScreen(
@@ -120,7 +152,18 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        restorePending()
         reload()
+    }
+
+    private fun restorePending() {
+        val id = prefs.getString(KEY_VERIFY_ID, null)
+        val title = prefs.getString(KEY_VERIFY_TITLE, null)
+        if (id != null && title != null) {
+            verifyFor = id to title
+            editingId = id
+            editingSpec = loadProfileById(id)?.launch
+        }
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -236,6 +279,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
             Nav.BACK -> when {
+                verifyFor != null -> Unit          // must be answered
+                editingId != null -> { editingId = null; editingSpec = null }
                 showAppPicker -> { showAppPicker = false; reload() }
                 showSettings -> showSettings = false
                 else -> Unit          // a launcher has nowhere to go back to
@@ -407,9 +452,115 @@ class MainActivity : ComponentActivity() {
         val p = loadProfileById(id) ?: return
         val i = aspectPresets.indexOf(p.aspectRatio)
         val next = aspectPresets[(i + 1) % aspectPresets.size]
-        app.profiles.save(p.copy(aspectRatio = next))
+        app.profiles.save(p.copy(aspectRatio = next))?.let { toast(it) }
         reload()
     }
+
+    // ---- intent editor ------------------------------------------------------
+
+    private fun startEditing(id: String) {
+        val p = loadProfileById(id) ?: return
+        editingId = id
+        editingSpec = p.launch
+        showSettings = false
+    }
+
+    private fun editorState(id: String, spec: org.lighthouse.data.LaunchSpec): IntentEditorState {
+        val page = pages.firstOrNull { it.profile.id == id }
+        val game = page?.games?.firstOrNull { it.playable }
+        val pkg = spec.component?.substringBefore('/').orEmpty()
+        val target = LaunchIntentBuilder.Target(
+            game?.entry?.uri, game?.entry?.id, game?.title ?: "Example Game"
+        )
+        val preview = when (val r = LaunchIntentBuilder.build(spec, target)) {
+            is LaunchIntentBuilder.Result.Ready -> LaunchIntentBuilder.describe(r.intent)
+            is LaunchIntentBuilder.Result.Unbuildable -> "Cannot build: ${'$'}{r.reason}"
+        }
+        return IntentEditorState(
+            platformId = id,
+            platformName = page?.profile?.name ?: id,
+            spec = spec,
+            verified = loadProfileById(id)?.verified == true,
+            testGame = game?.title,
+            preview = preview,
+            activities = if (pkg.isBlank()) emptyList() else exportedActivities(this, pkg),
+            installedApps = org.lighthouse.provider.InstalledAppsProvider.installedApps(this),
+        )
+    }
+
+    private fun saveEditing() {
+        val id = editingId ?: return
+        val spec = editingSpec ?: return
+        val p = loadProfileById(id) ?: return
+        // Editing the launch invalidates any previous verification: the thing
+        // that was proven to work is not the thing about to run.
+        val err = app.profiles.save(p.copy(launch = spec, verified = false))
+        if (err != null) { toast(err); return }
+        editingId = null; editingSpec = null
+        reload()
+        toast("Saved. Test it to mark it verified.")
+    }
+
+    private fun testLaunch() {
+        val id = editingId ?: return
+        val spec = editingSpec ?: return
+        val page = pages.firstOrNull { it.profile.id == id } ?: return
+        val game = page.games.firstOrNull { it.playable } ?: return
+        val e = game.entry ?: return
+        val target = LaunchIntentBuilder.Target(e.uri, e.id, game.title)
+        when (val r = LaunchIntentBuilder.build(spec, target)) {
+            is LaunchIntentBuilder.Result.Unbuildable -> toast("Cannot launch: ${'$'}{r.reason}")
+            is LaunchIntentBuilder.Result.Ready -> {
+                runCatching { startActivity(r.intent) }
+                    .onSuccess {
+                        verifyFor = id to game.title
+                        // Persist BEFORE the emulator takes over: if this
+                        // process is killed we still know what to ask.
+                        prefs.edit()
+                            .putString(KEY_VERIFY_ID, id)
+                            .putString(KEY_VERIFY_TITLE, game.title)
+                            .putString(KEY_VERIFY_SPEC, specJson(spec))
+                            .apply()
+                    }
+                    .onFailure { toast("Launch failed: ${'$'}{it.message}") }
+            }
+        }
+    }
+
+    /**
+     * The user's answer is the only thing that sets `verified`. Never infer it
+     * from the app having started - a wrong intent can leave an emulator sitting
+     * on its own menu looking perfectly healthy.
+     */
+    private fun answerVerify(loaded: Boolean) {
+        val (id, _) = verifyFor ?: return
+        verifyFor = null
+        // The in-memory copy is gone if the process was killed while the
+        // emulator ran, so fall back to what we persisted.
+        val spec = editingSpec ?: prefs.getString(KEY_VERIFY_SPEC, null)?.let(::specFromJson)
+        prefs.edit()
+            .remove(KEY_VERIFY_ID).remove(KEY_VERIFY_TITLE).remove(KEY_VERIFY_SPEC)
+            .apply()
+        val p = loadProfileById(id) ?: return
+        if (loaded && spec != null) {
+            val err = app.profiles.save(p.copy(launch = spec, verified = true))
+            if (err != null) { toast(err); return }
+            editingId = null; editingSpec = null
+            reload()
+            toast("Verified — ${'$'}{p.name} launches correctly")
+        } else {
+            toast("Left unverified. Adjust the intent and test again.")
+        }
+    }
+
+    private fun specJson(spec: org.lighthouse.data.LaunchSpec): String =
+        kotlinx.serialization.json.Json.encodeToString(
+            org.lighthouse.data.LaunchSpec.serializer(), spec)
+
+    private fun specFromJson(s: String): org.lighthouse.data.LaunchSpec? = runCatching {
+        kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
+            .decodeFromString(org.lighthouse.data.LaunchSpec.serializer(), s)
+    }.getOrNull()
 
     private fun toggleApp(pkg: String, add: Boolean) {
         val p = appShelfProfile() ?: run {
@@ -418,12 +569,12 @@ class MainActivity : ComponentActivity() {
         }
         val next = if (add) (p.source.packages + pkg).distinct()
                    else p.source.packages - pkg
-        app.profiles.save(p.copy(source = p.source.copy(packages = next)))
+        app.profiles.save(p.copy(source = p.source.copy(packages = next)))?.let { toast(it) }
     }
 
     private fun togglePlatform(id: String, enabled: Boolean) {
         val p = loadProfileById(id) ?: return
-        app.profiles.save(p.copy(enabled = enabled))
+        app.profiles.save(p.copy(enabled = enabled))?.let { toast(it) }
         reload()
     }
 
@@ -438,7 +589,7 @@ class MainActivity : ComponentActivity() {
     private fun addSystem(system: org.lighthouse.data.CatalogueSystem) {
         val emu = app.catalogue.installedFor(system).firstOrNull()
         val order = (pages.maxOfOrNull { it.profile.order } ?: 0) + 1
-        app.profiles.save(app.catalogue.profileFor(system, emu, order))
+        app.profiles.save(app.catalogue.profileFor(system, emu, order))?.let { toast(it) }
         reload()
         toast(
             if (emu == null) "Added ${'$'}{system.name} — set its emulator and folder in Settings"
@@ -453,4 +604,10 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+
+    private companion object {
+        const val KEY_VERIFY_ID = "verify_id"
+        const val KEY_VERIFY_TITLE = "verify_title"
+        const val KEY_VERIFY_SPEC = "verify_spec"
+    }
 }
