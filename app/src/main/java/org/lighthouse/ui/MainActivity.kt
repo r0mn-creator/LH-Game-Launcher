@@ -41,7 +41,16 @@ class MainActivity : ComponentActivity() {
     private var systemIndex by mutableIntStateOf(0)
     private var cursor by mutableStateOf(GridCursor())
     private var pendingFolderFor: String? = null
+    /** Settings navigation stack: a path of node ids. Empty = root. */
+    private var menuPath by mutableStateOf<List<String>>(emptyList())
     private var showSettings by mutableStateOf(false)
+    private var showDrawer by mutableStateOf(false)
+    /** One cursor per screen depth, so backing out restores where you were. */
+    private var menuCursors by mutableStateOf<Map<String, Int>>(emptyMap())
+    private var drawerCursor by mutableIntStateOf(0)
+    private var menuForward by mutableStateOf(true)
+    private var categoryIndex by mutableIntStateOf(0)
+    private var pane by mutableStateOf(Pane.RAIL)
     private var showAppPicker by mutableStateOf(false)
     /** Platform whose launch intent is being edited, and the working copy. */
     private var editingId by mutableStateOf<String?>(null)
@@ -113,23 +122,38 @@ class MainActivity : ComponentActivity() {
                         onSave = ::saveEditing,
                         onBack = { editingId = null; editingSpec = null },
                     )
+                } else if (showAppPicker) {
+                    AppPickerScreen(
+                        apps = appPickerRows(),
+                        onToggle = ::toggleApp,
+                        onClose = { showAppPicker = false; reload() },
+                    )
+                } else if (showDrawer) {
+                    AppDrawerScreen(
+                        apps = drawerApps,
+                        cursor = drawerCursor,
+                        onSelect = { drawerCursor = it },
+                        onLaunch = ::launchApp,
+                        onBack = { showDrawer = false },
+                    )
                 } else if (showSettings) {
-                    SettingsScreen(
-                        state = settingsState(),
-                        onBack = { showSettings = false },
-                        onImport = ::runImport,
-                        onSetupFolders = { showSettings = false; startSetup() },
-                        onRescan = ::reload,
-                        onTogglePlatform = ::togglePlatform,
-                        onChooseFolder = { showSettings = false; chooseFolder(it) },
-                        onAddSystem = ::addSystem,
-                        onRemovePlatform = ::removePlatform,
-                        onPickTheme = ::pickTheme,
-                        onChooseApps = { showAppPicker = true },
-                        onToggleApp = ::toggleApp,
-                        onCloseAppPicker = { showAppPicker = false; reload() },
-                        onCycleAspect = ::cycleAspect,
-                        onEditIntent = ::startEditing,
+                    val st = settingsState()
+                    val tree = MenuTree(st, menuActions)
+                    val nodeNow = tree.nodeFor(currentPath())
+                    SettingsShell(
+                        categories = SETTINGS_CATEGORIES,
+                        categoryIndex = categoryIndex,
+                        node = nodeNow,
+                        contentCursor = cursorFor(nodeNow),
+                        pane = pane,
+                        forward = menuForward,
+                        subtitle = st.gamesPlayable.toString() + " of " +
+                            st.gamesTotal.toString() + " games playable",
+                        onPickCategory = { i -> categoryIndex = i; menuPath = emptyList() },
+                        onFocusContent = { pane = Pane.CONTENT },
+                        onSelectContent = { setCursor(nodeNow, it) },
+                        onActivate = { activate(nodeNow, it) },
+                        onBack = ::menuBack,
                     )
                 } else {
                     HomeScreen(
@@ -269,9 +293,22 @@ class MainActivity : ComponentActivity() {
                 systemIndex = (systemIndex + 1) % pages.size
                 cursor = cursor.copy(index = 0)
             }
-            Nav.LEFT, Nav.RIGHT, Nav.UP, Nav.DOWN ->
-                cursor = cursor.move(nav, page?.games?.size ?: 0)
-            Nav.LAUNCH -> {
+            Nav.LEFT, Nav.RIGHT, Nav.UP, Nav.DOWN -> when {
+                showDrawer -> drawerCursor = GridCursor(drawerCursor, DRAWER_COLUMNS)
+                    .move(nav, drawerApps.size).index
+                showSettings -> moveMenu(nav)
+                else -> cursor = cursor.move(nav, page?.games?.size ?: 0)
+            }
+            Nav.LAUNCH -> if (showDrawer) {
+                drawerApps.getOrNull(drawerCursor)?.let { launchApp(it.first) }
+            } else if (showSettings) {
+                if (pane == Pane.RAIL) {
+                    pane = Pane.CONTENT
+                } else {
+                    val n = MenuTree(settingsState(), menuActions).nodeFor(currentPath())
+                    activate(n, cursorFor(n))
+                }
+            } else {
                 val g = page?.games?.getOrNull(cursor.index)
                 if (page != null && g != null) launch(page, g)
                 else if (page != null && page.problem?.contains("no roots") == true) {
@@ -282,10 +319,17 @@ class MainActivity : ComponentActivity() {
                 verifyFor != null -> Unit          // must be answered
                 editingId != null -> { editingId = null; editingSpec = null }
                 showAppPicker -> { showAppPicker = false; reload() }
-                showSettings -> showSettings = false
-                else -> Unit          // a launcher has nowhere to go back to
+                showDrawer -> showDrawer = false
+                showSettings -> menuBack()
+                // On the home screen B is the app drawer, as on Beacon.
+                else -> openDrawer()
             }
-            Nav.MENU -> showSettings = !showSettings
+            Nav.MENU -> if (showSettings) {
+                showSettings = false
+            } else {
+                menuPath = emptyList(); menuForward = true
+                pane = Pane.RAIL; categoryIndex = 0; showSettings = true
+            }
             Nav.SEARCH -> toast("Search is not built yet")
         }
     }
@@ -391,6 +435,104 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ---- menu navigation ----------------------------------------------------
+
+    private val drawerApps: List<Pair<String, String>>
+        get() = org.lighthouse.provider.InstalledAppsProvider.installedApps(this)
+
+    private fun openDrawer() { drawerCursor = 0; showDrawer = true }
+
+    private fun launchApp(pkg: String) {
+        val i = packageManager.getLaunchIntentForPackage(pkg)
+        if (i == null) { toast("That app has no launcher entry"); return }
+        runCatching { startActivity(i) }
+            .onFailure { toast("Could not open: ${'$'}{it.message}") }
+    }
+
+    /** Category id, plus any drilled-into detail. */
+    private fun currentPath(): List<String> =
+        listOf(SETTINGS_CATEGORIES[categoryIndex].id) + menuPath
+
+    private fun cursorFor(node: MenuNode): Int {
+        val stored = menuCursors[node.id]
+        val ok = node.selectable()
+        if (ok.isEmpty()) return 0
+        return stored?.takeIf { it in ok } ?: ok.first()
+    }
+
+    private fun setCursor(node: MenuNode, i: Int) {
+        menuCursors = menuCursors + (node.id to i)
+    }
+
+    private fun moveMenu(nav: Nav) {
+        val node = MenuTree(settingsState(), menuActions).nodeFor(currentPath())
+        if (pane == Pane.RAIL) {
+            when (nav) {
+                Nav.UP -> categoryIndex = (categoryIndex - 1)
+                    .coerceIn(0, SETTINGS_CATEGORIES.size - 1)
+                Nav.DOWN -> categoryIndex = (categoryIndex + 1)
+                    .coerceIn(0, SETTINGS_CATEGORIES.size - 1)
+                // Right crosses into the content pane - the spatial move the
+                // two-pane layout implies.
+                Nav.RIGHT -> if (node.selectable().isNotEmpty()) pane = Pane.CONTENT
+                else -> Unit
+            }
+            if (nav == Nav.UP || nav == Nav.DOWN) menuPath = emptyList()
+            return
+        }
+        val ok = node.selectable()
+        if (ok.isEmpty()) { pane = Pane.RAIL; return }
+        val at = ok.indexOf(cursorFor(node)).coerceAtLeast(0)
+        when (nav) {
+            Nav.UP -> setCursor(node, ok[(at - 1).coerceAtLeast(0)])
+            Nav.DOWN -> setCursor(node, ok[(at + 1).coerceAtMost(ok.size - 1)])
+            // Left backs out: to the parent detail if we are in one, else to
+            // the rail.
+            Nav.LEFT -> menuBack()
+            else -> Unit
+        }
+    }
+
+    private fun activate(node: MenuNode, index: Int) {
+        when (val item = node.items.getOrNull(index)) {
+            is MenuItem.Submenu -> { menuForward = true; menuPath = menuPath + item.id }
+            is MenuItem.Action -> if (item.enabled) item.run()
+            is MenuItem.Toggle -> item.set(!item.on)
+            is MenuItem.Choice -> item.cycle()
+            else -> Unit
+        }
+    }
+
+    private fun menuBack() {
+        when {
+            menuPath.isNotEmpty() -> { menuForward = false; menuPath = menuPath.dropLast(1) }
+            pane == Pane.CONTENT -> pane = Pane.RAIL
+            else -> showSettings = false
+        }
+    }
+
+    private val menuActions = object : MenuTree.MenuActions {
+        override fun import() = runImport()
+        override fun setupFolders() { showSettings = false; startSetup() }
+        override fun rescan() { reload(); toast("Rescanning…") }
+        override fun chooseFolder(platformId: String) {
+            showSettings = false
+            this@MainActivity.chooseFolder(platformId)
+        }
+        override fun chooseApps() { showAppPicker = true }
+        override fun editIntent(platformId: String) = startEditing(platformId)
+        override fun cycleAspect(platformId: String) = this@MainActivity.cycleAspect(platformId)
+        override fun setEnabled(platformId: String, enabled: Boolean) =
+            togglePlatform(platformId, enabled)
+        override fun remove(platformId: String) {
+            removePlatform(platformId)
+            menuBack()
+        }
+        override fun addSystem(system: org.lighthouse.data.CatalogueSystem) =
+            this@MainActivity.addSystem(system)
+        override fun pickTheme(id: String?) = this@MainActivity.pickTheme(id)
+    }
+
     // ---- settings -----------------------------------------------------------
 
     private fun settingsState(): SettingsState {
@@ -429,14 +571,6 @@ class MainActivity : ComponentActivity() {
             gamesTotal = pages.sumOf { it.games.size },
             gamesPlayable = pages.sumOf { pg -> pg.games.count { it.playable } },
             problems = loaded.problems,
-            appPicker = if (!showAppPicker) null else {
-                val chosen = appShelfProfile()?.source?.packages.orEmpty().toSet()
-                org.lighthouse.provider.InstalledAppsProvider.installedApps(this)
-                    .map { (pkg, label) -> AppChoice(pkg, label, pkg in chosen) }
-                    // Added ones first so the shelf is easy to review.
-                    .sortedWith(compareByDescending<AppChoice> { it.chosen }
-                        .thenBy { it.label.lowercase() })
-            },
         )
     }
 
@@ -463,6 +597,15 @@ class MainActivity : ComponentActivity() {
         editingId = id
         editingSpec = p.launch
         showSettings = false
+    }
+
+    /** Rows for the Android app-shelf picker. */
+    private fun appPickerRows(): List<AppChoice> {
+        val chosen = appShelfProfile()?.source?.packages.orEmpty().toSet()
+        return org.lighthouse.provider.InstalledAppsProvider.installedApps(this)
+            .map { (pkg, label) -> AppChoice(pkg, label, pkg in chosen) }
+            .sortedWith(compareByDescending<AppChoice> { it.chosen }
+                .thenBy { it.label.lowercase() })
     }
 
     private fun editorState(id: String, spec: org.lighthouse.data.LaunchSpec): IntentEditorState {
