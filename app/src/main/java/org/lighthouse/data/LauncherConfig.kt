@@ -61,7 +61,13 @@ class LauncherConfig(private val context: Context) {
         get() = get(KEY_COLOR_THEME)
         set(v) { set(KEY_COLOR_THEME, v) }
 
+    /** False until first-run setup has been completed or skipped. */
+    var setupComplete: Boolean
+        get() = get(KEY_SETUP) == "true"
+        set(v) { set(KEY_SETUP, if (v) "true" else null) }
+
     companion object {
+        const val KEY_SETUP = "setup_complete"
         const val KEY_COLOR_THEME = "color_theme"
         private const val TAG = "LH.Config"
     }

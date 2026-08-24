@@ -27,7 +27,30 @@ object FolderPicker {
      * card and hunting for the folder eleven times. Without it the picker opens
      * at internal storage root, which Android refuses to grant at all.
      */
-    fun intent(initial: Uri? = null): Intent =
+    /**
+     * Where to open when nothing has been picked yet - i.e. first run.
+     *
+     * The default landing place is the root of internal storage, which Android
+     * refuses to grant ("Can't use this folder. To protect your privacy, choose
+     * another folder"), so a new user's very first action fails. A removable
+     * card's root IS grantable and is where ROM libraries usually live, so
+     * prefer it and fall back to Downloads.
+     */
+    fun defaultStart(context: android.content.Context): Uri? {
+        val sm = context.getSystemService(android.os.storage.StorageManager::class.java)
+        val card = sm?.storageVolumes?.firstOrNull {
+            it.isRemovable && !it.isPrimary && it.state == android.os.Environment.MEDIA_MOUNTED
+        }
+        val id = card?.uuid?.let { "$it:" } ?: "primary:Download"
+        return runCatching {
+            Uri.parse(
+                "content://com.android.externalstorage.documents/document/" +
+                    android.net.Uri.encode(id)
+            )
+        }.getOrNull()
+    }
+
+    fun intent(initial: Uri? = null, fallbackDoc: Uri? = null): Intent =
         Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
             addFlags(
                 Intent.FLAG_GRANT_READ_URI_PERMISSION or
@@ -44,6 +67,8 @@ object FolderPicker {
                     )
                 }.getOrNull() ?: initial
                 putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, doc)
+            } else if (fallbackDoc != null && android.os.Build.VERSION.SDK_INT >= 26) {
+                putExtra(android.provider.DocumentsContract.EXTRA_INITIAL_URI, fallbackDoc)
             }
         }
 

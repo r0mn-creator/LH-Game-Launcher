@@ -31,6 +31,17 @@ class ProfileStore(private val context: Context) {
     val dir: File get() = File(context.getExternalFilesDir(null), "platforms")
 
     /** Copy bundled presets in, without ever clobbering the user's own files. */
+    /**
+     * Extract any profiles shipped in assets.
+     *
+     * There are none by default, and that is deliberate. Xbox, Xbox 360,
+     * Windows and GameCube used to ship pre-installed, so every fresh install
+     * opened on four empty shelves reading "folder source has no roots" -
+     * systems the user had never asked for and could not obviously remove.
+     * Their launch contracts live in the catalogue, so adding them is the same
+     * two taps as any other console. The hook stays for anyone who wants to
+     * ship a preconfigured build.
+     */
     fun installBundled() {
         if (!dir.exists() && !dir.mkdirs()) {
             Log.e(TAG, "could not create $dir")
@@ -110,8 +121,14 @@ class ProfileStore(private val context: Context) {
     fun save(p: PlatformProfile): String? {
         return runCatching {
             if (!dir.exists()) dir.mkdirs()
-            File(dir, "${p.id}.json")
-                .writeText(json.encodeToString(PlatformProfile.serializer(), p))
+            // A profile's identity is its ID, not its filename. The bundled
+            // GameCube profile lives in gamecube.json with id "gc", so writing
+            // "gc.json" produced a SECOND file claiming the same id - and
+            // load() keeps the first by filename, so the empty bundled profile
+            // won and the folder the user had just granted was silently
+            // discarded. Write back into whichever file already owns the id.
+            val target = fileOwning(p.id) ?: File(dir, "${p.id}.json")
+            target.writeText(json.encodeToString(PlatformProfile.serializer(), p))
             null
         }.getOrElse { e ->
             Log.e(TAG, "could not save ${p.id}", e)
@@ -124,7 +141,18 @@ class ProfileStore(private val context: Context) {
     }
 
     fun delete(id: String): Boolean =
-        runCatching { File(dir, "$id.json").delete() }.getOrDefault(false)
+        runCatching { (fileOwning(id) ?: File(dir, "$id.json")).delete() }
+            .getOrDefault(false)
+
+    /** The file that currently declares this id, whatever it is called. */
+    private fun fileOwning(id: String): File? =
+        dir.listFiles { f -> f.isFile && f.name.endsWith(".json") }
+            ?.sortedBy { it.name }
+            ?.firstOrNull { f ->
+                runCatching {
+                    json.decodeFromString<PlatformProfile>(f.readText()).id
+                }.getOrNull() == id
+            }
 
     private companion object { const val TAG = "LH.ProfileStore" }
 }

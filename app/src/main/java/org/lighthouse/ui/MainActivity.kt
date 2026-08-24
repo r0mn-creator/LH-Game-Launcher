@@ -57,6 +57,11 @@ class MainActivity : ComponentActivity() {
     /** Bumped when the palette changes, to force a recompose. */
     private var colorEpoch by mutableIntStateOf(0)
     private var showAppPicker by mutableStateOf(false)
+    /** Non-null while first-run setup is on screen. */
+    private var onboardStep by mutableStateOf<Step?>(null)
+    private var onboardCursor by mutableStateOf(0)
+    /** The one system chosen during first-run setup. */
+    private var onboardPicked by mutableStateOf<String?>(null)
     /** Non-null while a long job runs; the text is what the user sees. */
     private var busy by mutableStateOf<String?>(null)
     /** Platform whose launch intent is being edited, and the working copy. */
@@ -159,6 +164,18 @@ class MainActivity : ComponentActivity() {
                 val vf = verifyFor
                 if (vf != null) {
                     VerifyDialog(vf.second) { ok -> answerVerify(ok) }
+                } else if (onboardStep != null && !showSettings && !showAppPicker) {
+                    val st = onboardStep!!
+                    val node = Onboarding.node(st, onboardingState(), onboardActions)
+                    ConsoleMenuScreen(
+                        node = node,
+                        cursor = onboardCursor.coerceIn(0, (node.items.size - 1).coerceAtLeast(0)),
+                        forward = true,
+                        depth = if (st == Step.WELCOME) 0 else 1,
+                        onSelect = { onboardCursor = it },
+                        onActivate = { i -> activate(node, i) },
+                        onBack = { onboardBack() },
+                    )
                 } else if (ed != null && editingPickPackage) {
                     val node = packageNode()
                     ConsoleMenuScreen(
@@ -248,6 +265,10 @@ class MainActivity : ComponentActivity() {
             }
         }
         restorePending()
+        // Shown only until it is completed or skipped. Deliberately AFTER
+        // restorePending: a pending "did the game load?" question is a reply to
+        // something the user did and must not be buried under a wizard.
+        if (!app.config.setupComplete && verifyFor == null) onboardStep = Step.WELCOME
         reload()
     }
 
@@ -278,11 +299,14 @@ class MainActivity : ComponentActivity() {
 
     // ---- data ---------------------------------------------------------------
 
-    private fun reload() {
+    /** @param landOn platform id to select once the rebuild finishes. */
+    private fun reload(landOn: String? = null) {
         lifecycleScope.launch {
             val built = withContext(Dispatchers.IO) { buildPages() }
             pages = built
-            systemIndex = systemIndex.coerceIn(0, (built.size - 1).coerceAtLeast(0))
+            val wanted = landOn?.let { id -> built.indexOfFirst { it.profile.id == id } }
+                ?.takeIf { it >= 0 }
+            systemIndex = (wanted ?: systemIndex).coerceIn(0, (built.size - 1).coerceAtLeast(0))
             cursor = cursor.copy(index = 0)
         }
     }
@@ -383,6 +407,15 @@ class MainActivity : ComponentActivity() {
                         else -> appPickerCursor
                     }
                 }
+                onboardStep != null && !showSettings -> {
+                    val n = Onboarding.node(onboardStep!!, onboardingState(), onboardActions)
+                        .items.size
+                    if (n > 0) onboardCursor = when (nav) {
+                        Nav.UP, Nav.LEFT -> (onboardCursor - 1).coerceAtLeast(0)
+                        Nav.DOWN, Nav.RIGHT -> (onboardCursor + 1).coerceAtMost(n - 1)
+                        else -> onboardCursor
+                    }
+                }
                 showDrawer -> drawerCursor = GridCursor(drawerCursor, DRAWER_COLUMNS)
                     .move(nav, drawerApps.size).index
                 showSettings -> moveMenu(nav)
@@ -396,6 +429,9 @@ class MainActivity : ComponentActivity() {
             } else if (editingId != null) {
                 val n = intentNode(editingId!!, editingSpec!!)
                 activate(n, clampEditorCursor(n))
+            } else if (onboardStep != null && !showSettings) {
+                val n = Onboarding.node(onboardStep!!, onboardingState(), onboardActions)
+                activate(n, onboardCursor.coerceIn(0, (n.items.size - 1).coerceAtLeast(0)))
             } else if (showAppPicker) {
                 appPickerRows().getOrNull(appPickerCursor)?.let { toggleApp(it.pkg, !it.chosen) }
             } else if (showDrawer) {
@@ -422,6 +458,7 @@ class MainActivity : ComponentActivity() {
                 showAppPicker -> { showAppPicker = false; reload() }
                 showDrawer -> showDrawer = false
                 showSettings -> menuBack()
+                onboardStep != null -> onboardBack()
                 // On the home screen B is the app drawer, as on Beacon.
                 else -> openDrawer()
             }
@@ -498,7 +535,7 @@ class MainActivity : ComponentActivity() {
         val known = pages.firstOrNull { it.profile.id == platformId }
             ?.profile?.source?.roots?.firstOrNull()
             ?.let { runCatching { Uri.parse(it) }.getOrNull() }
-        folderPicker.launch(FolderPicker.intent(known))
+        folderPicker.launch(FolderPicker.intent(known, FolderPicker.defaultStart(this)))
     }
 
     /**
@@ -608,6 +645,99 @@ class MainActivity : ComponentActivity() {
             busy = null
             reload()
             toast(report.summary() + report.notes.firstOrNull()?.let { " — $it" }.orEmpty())
+        }
+    }
+
+    // ---- first-run setup ----------------------------------------------------
+
+    private fun onboardingState(): OnboardingState {
+        val cat = runCatching { app.catalogue.load().systems }.getOrDefault(emptyList())
+        val have = pages.map { it.profile.id }.toSet()
+        // Installed emulators the user has not added yet, plus whatever they
+        // picked in this run - so the choice stays visible after it is made.
+        val detected = cat
+            .filter { it.id !in have || it.id == onboardPicked }
+            .mapNotNull { sys ->
+                app.catalogue.installedFor(sys).firstOrNull()?.let { sys to it.name }
+            }
+        val page = pages.firstOrNull { it.profile.id == onboardPicked }
+        return OnboardingState(
+            beaconExport = ImportSource.find()?.absolutePath,
+            detected = detected,
+            pickedId = onboardPicked,
+            pickedName = page?.profile?.name
+                ?: cat.firstOrNull { it.id == onboardPicked }?.name,
+            pickedEmulator = cat.firstOrNull { it.id == onboardPicked }
+                ?.let { app.catalogue.installedFor(it).firstOrNull()?.name },
+            pickedHasFolder = page != null &&
+                !FolderPicker.needsFolder(this, page.profile.source.roots),
+            pickedGames = page?.games?.count { it.playable } ?: 0,
+            systemsAdded = pages.size,
+            gamesFound = pages.sumOf { pg -> pg.games.count { it.playable } },
+            busy = busy != null,
+        )
+    }
+
+    private fun onboardNext() {
+        val order = Step.entries
+        val i = order.indexOf(onboardStep ?: Step.WELCOME)
+        onboardStep = order.getOrNull(i + 1) ?: Step.DONE
+        onboardCursor = 0
+    }
+
+    private fun onboardBack() {
+        val order = Step.entries
+        val i = order.indexOf(onboardStep ?: Step.WELCOME)
+        if (i <= 0) { finishOnboarding(); return }
+        onboardStep = order[i - 1]
+        onboardCursor = 0
+    }
+
+    private fun finishOnboarding() {
+        app.config.setupComplete = true
+        onboardStep = null
+        onboardCursor = 0
+        // Open on the system that was just set up. Landing on an unconfigured
+        // bundled shelf reading "folder source has no roots" makes a successful
+        // setup look like it failed.
+        reload(landOn = onboardPicked)
+    }
+
+    private val onboardActions = object : OnboardingActions {
+        override fun next() = onboardNext()
+        override fun finish() = finishOnboarding()
+
+        override fun importBeacon() {
+            lifecycleScope.launch {
+                busy = "Reading the Beacon export…"
+                val r = withContext(Dispatchers.IO) { ImportSource.run(this@MainActivity) }
+                busy = null
+                toast(r.summary())
+                reload()
+            }
+        }
+
+        override fun pickSystem(system: org.lighthouse.data.CatalogueSystem) {
+            if (pages.none { it.profile.id == system.id }) addSystem(system)
+            onboardPicked = system.id
+            reload()
+            // Choosing the emulator IS this step; asking the user to then find
+            // a Next button below a list of twelve is a step for its own sake.
+            onboardNext()
+        }
+
+        override fun chooseFolderForPicked() {
+            onboardPicked?.let { chooseFolder(it) }
+        }
+
+        override fun openCatalogue() {
+            // Hand over to the real catalogue rather than building a second
+            // one; the wizard is still underneath and returns when it closes.
+            showSettings = true
+            categoryIndex = SETTINGS_CATEGORIES.indexOfFirst { it.id == "add" }
+                .coerceAtLeast(0)
+            menuPath = emptyList()
+            pane = Pane.CONTENT
         }
     }
 
