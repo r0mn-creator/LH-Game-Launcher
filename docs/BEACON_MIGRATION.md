@@ -52,9 +52,9 @@ launch. Those three sections are new work, not a migration.
 ### How things are referenced
 
 - **Scan folders** (`game_platform_path.path`) are SAF *tree* URIs:
-  `content://com.android.externalstorage.documents/tree/75D7-DC5F%3AGames%2FESDE%2FROMs%2Fgba`
+  `content://com.android.externalstorage.documents/tree/XXXX-XXXX%3AGames%2FESDE%2FROMs%2Fgba`
 - **Game files** (`game_file.file`) are SAF *document* URIs under that tree.
-  All the user's ROMs live on the SD card (`75D7-DC5F`) under
+  All the user's ROMs live on the SD card (`XXXX-XXXX`) under
   `Games/ESDE/ROMs/<system>` — i.e. shared with ES-DE.
 - **Art** is an absolute path into Beacon's private storage:
   `/data/user/0/com.radikal.gamelauncher/files/platform_<pid>/game_<gid>/cover.jpg`

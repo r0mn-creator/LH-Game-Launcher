@@ -51,7 +51,7 @@ Xbox-specific code anywhere in the app:
   "aspect_ratio": "3:4",
   "source": {
     "provider": "folder",
-    "roots": ["content://com.android.externalstorage.documents/tree/75D7-DC5F%3AGames%2FOG%20Xbox"],
+    "roots": ["content://com.android.externalstorage.documents/tree/XXXX-XXXX%3AGames%2FOG%20Xbox"],
     "extensions": ["iso", "xiso.iso", "xbe"]
   },
   "launch": {

@@ -1,7 +1,7 @@
 # LightHouse — verified launch contracts
 
 How LightHouse starts a game in each target app. Everything marked **VERIFIED**
-was tested on the Odin 2 (`3a478943`) and observed to reach gameplay; anything
+was tested on the Odin 2 and observed to reach gameplay; anything
 else is read from source or a manifest and must not be trusted until tested.
 
 The whole reason this project exists: **Beacon recognises emulators from a
@@ -35,7 +35,7 @@ This app holds **no storage permissions whatsoever** (only INTERNET), so:
 There is exactly one correct way to launch it, and "the app opened" is not
 evidence that it worked. Always confirm gameplay, never process liveness.
 
-Content lives at `/storage/75D7-DC5F/Games/OG Xbox/*.xiso.iso`.
+Content lives at `/storage/XXXX-XXXX/Games/OG Xbox/*.xiso.iso`.
 
 ---
 

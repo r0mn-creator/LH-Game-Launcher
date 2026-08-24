@@ -5,6 +5,8 @@ plugins {
     id 'org.jetbrains.kotlin.plugin.serialization'
 }
 
+def keystorePropsFile = rootProject.file("keystore.properties")
+
 android {
     namespace 'org.lighthouse'
     compileSdk 35
@@ -20,9 +22,27 @@ android {
         versionName "0.1.0"
     }
 
+    signingConfigs {
+        release {
+            if (keystorePropsFile.exists()) {
+                def props = new Properties()
+                keystorePropsFile.withInputStream { props.load(it) }
+                storeFile file(props['storeFile'])
+                storePassword props['storePassword']
+                keyAlias props['keyAlias']
+                keyPassword props['keyPassword']
+            }
+        }
+    }
+
     buildTypes {
         debug { applicationIdSuffix ".debug" }
         release {
+            // Signed only when keystore.properties is present, so the repo
+            // still builds for anyone who clones it without the key.
+            if (keystorePropsFile.exists()) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
