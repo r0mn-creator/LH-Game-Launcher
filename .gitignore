@@ -4,4 +4,7 @@ research/apks/
 build/
 .gradle/
 local.properties
-local.properties
+research/
+*.jks
+*.keystore
+keystore.properties
