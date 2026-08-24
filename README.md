@@ -14,6 +14,7 @@ the device, not waiting for a new release.
 - [Install](#install)
 - [Setting up your library](#setting-up-your-library)
 - [Colour themes](#colour-themes)
+- [Credits and provenance](#credits-and-provenance)
 - [Where things live](#where-things-live)
 - [Building from source](#building-from-source)
 - [Status](#status)
@@ -32,7 +33,9 @@ The app icon is a placeholder at the moment.
 
 ## Setting up your library
 
-Open Settings with **Y** (or tap `Y Settings`).
+On first run LH asks for one emulator and where its games are, and that is all —
+press **Done** at any point and add the rest later. Everything below is in
+Settings, opened with **Y** (or by tapping `Y Settings`).
 
 - **Consoles** — one row per system. Open a system to set its ROM folder,
   edit its launch intent, or change its box-art shape.
@@ -192,6 +195,39 @@ Then: **Settings > Themes > Colours > Add a theme from a file**.
 
 `Default` is built in, always sits at the top of the list, and cannot be
 removed. Selecting it clears the theme setting rather than writing a name.
+
+## Credits and provenance
+
+LH is **inspired by [Beacon Game Launcher](https://play.google.com/store/apps/details?id=com.radikal.gamelauncher)**, which is
+the launcher that made an Android handheld feel like a console in the first
+place. The debt is real: the shelf layout, the bumper-paged systems, the
+two-pane settings and the app drawer on B are all Beacon's shape, and LH is an
+attempt at that experience with launch methods that are editable data rather
+than a compiled-in list.
+
+Beacon is closed source. **No Beacon code, artwork, fonts or other assets are
+used here.** Every line in this repository was written for it — 29 Kotlin
+files, and the only third-party dependencies are AndroidX, Jetpack Compose,
+kotlinx.serialization and Coil, all under permissive licences.
+
+What LH did take from Beacon is factual rather than creative:
+
+- **Its own package and activity name**, so the launcher can tell you which app
+  is currently default.
+- **Which scraping services it uses.** Reading the service names told us
+  libretro's thumbnail server needs no account; the client that talks to it is
+  ours.
+- **Your library, with your permission.** The importer reads an export *you*
+  produce from your own device. That is your data, not Beacon's.
+- **Its layout, as a design reference**, from screenshots of it running.
+
+Interoperability details of this kind — a package name, an intent action, the
+name of a public API — are facts about an interface, not authorship. The same
+applies to the launch contracts for every emulator LH supports: each was found
+by inspecting the app's own manifest and confirmed by launching a real game.
+
+Box art is fetched from libretro at runtime, onto your device, at your request.
+LH does not redistribute artwork.
 
 ## Where things live
 
