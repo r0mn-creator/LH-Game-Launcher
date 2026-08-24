@@ -98,8 +98,6 @@ fun HomeScreen(
     systemIndex: Int,
     cursor: GridCursor,
     onChooseFolder: (String) -> Unit,
-    /** The Android shelf is curated from installed apps, not scanned. */
-    onChooseApps: (String) -> Unit,
     onImport: () -> Unit,
     onLaunch: (SystemPage, DisplayGame) -> Unit,
     // Every on-screen control is also a touch target. The hints are not a
@@ -154,8 +152,8 @@ fun HomeScreen(
             ) {
                 when {
                     page == null -> CentreMessage("No systems yet. Press Y to add one.")
-                    page.problem != null -> ProblemPane(page, onChooseFolder, onChooseApps)
-                    page.games.isEmpty() -> ProblemPane(page, onChooseFolder, onChooseApps)
+                    page.problem != null -> ProblemPane(page, onChooseFolder)
+                    page.games.isEmpty() -> ProblemPane(page, onChooseFolder)
                     else -> {
                         val anyPlayable = page.games.any { it.playable }
                         CoverGrid(
@@ -169,16 +167,10 @@ fun HomeScreen(
 
             page?.let { p ->
                 if (p.games.isNotEmpty() && p.games.none { it.playable }) {
-                    // An app shelf has no folder to grant - its entries come from
-                    // the app library - so offering "Choose folder" here sends the
-                    // user to a picker that cannot help them.
-                    if (p.isAppShelf) {
-                        SystemNotice(
-                            p.games.size.toString() +
-                                " apps imported — pick which of them to show here",
-                            action = "Choose apps…",
-                        ) { onChooseApps(p.profile.id) }
-                    } else {
+                    // Only a folder-backed shelf gets a prompt here. Which apps
+                    // appear on an app shelf is decided in Settings, where the
+                    // system was added - the home screen is for playing.
+                    if (!p.isAppShelf) {
                         SystemNotice(
                             p.games.size.toString() +
                                 " games imported — choose this system's folder to play them"
@@ -453,11 +445,7 @@ private fun CoverTile(
 }
 
 @Composable
-private fun ProblemPane(
-    page: SystemPage,
-    onChooseFolder: (String) -> Unit,
-    onChooseApps: (String) -> Unit,
-) {
+private fun ProblemPane(page: SystemPage, onChooseFolder: (String) -> Unit) {
     val theme = LocalTheme.current
     Column(
         Modifier
@@ -477,22 +465,18 @@ private fun ProblemPane(
         }
         val needsFolder = !page.isAppShelf && (page.problem?.contains("no roots") == true ||
             page.notes.any { it.contains("folder", ignoreCase = true) })
-        if (page.isAppShelf || needsFolder) {
+        if (needsFolder) {
             Spacer(Modifier.height(16.dp))
             Box(
                 Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(theme.primary.copy(alpha = 0.18f))
                     .border(1.dp, theme.primary, RoundedCornerShape(8.dp))
-                    .clickable {
-                        if (page.isAppShelf) onChooseApps(page.profile.id) else onChooseFolder(page.profile.id)
-                    }
+                    .clickable { onChooseFolder(page.profile.id) }
                     .padding(horizontal = 18.dp, vertical = 10.dp)
             ) {
-                Text(
-                    if (page.isAppShelf) "Choose apps…" else "Choose folder…",
-                    color = theme.primary, fontSize = 15.sp, fontWeight = FontWeight.Medium,
-                )
+                Text("Choose folder…", color = theme.primary, fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium)
             }
         }
     }

@@ -257,7 +257,6 @@ class MainActivity : ComponentActivity() {
                         systemIndex = systemIndex,
                         cursor = cursor,
                         onChooseFolder = ::chooseFolder,
-                        onChooseApps = { id -> appPickerFor = id; showAppPicker = true },
                         onImport = ::runImport,
                         onLaunch = ::launch,
                         onSelect = { i -> cursor = cursor.copy(index = i) },

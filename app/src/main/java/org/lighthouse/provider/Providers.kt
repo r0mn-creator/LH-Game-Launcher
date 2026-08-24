@@ -238,7 +238,10 @@ object InstalledAppsProvider : GameProvider {
         if (wanted.isEmpty()) {
             return Discovery(
                 emptyList(),
-                listOf("No apps added yet. Settings ▸ Android ▸ Choose apps.")
+                // Name the shelf being looked at: Android is no longer the only
+                // one, and "Settings ▸ Android" is wrong on the Windows shelf.
+                listOf("No apps added yet. Settings ▸ Consoles ▸ ${profile.name} " +
+                    "▸ Choose apps.")
             )
         }
         val pm = context.packageManager
