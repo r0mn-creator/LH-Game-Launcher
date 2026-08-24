@@ -1322,7 +1322,7 @@ class MainActivity : ComponentActivity() {
         // as "dc" while the catalogue calls it "dreamcast", and the result was
         // two shelves both labelled DC. Compare the names as the user reads
         // them - "Sega Dreamcast" and "Sega - Dreamcast" are one console.
-        val already = app.profiles.load().profiles.firstOrNull {
+        val already = app.profiles.declared().firstOrNull {
             it.id == system.id ||
                 org.lighthouse.data.normaliseTitle(it.name) ==
                 org.lighthouse.data.normaliseTitle(system.name)

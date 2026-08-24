@@ -116,6 +116,24 @@ class ProfileStore(private val context: Context) {
     }
 
     /**
+     * Every profile on disk, valid or not.
+     *
+     * `load()` deliberately withholds profiles that fail validation, which is
+     * right for rendering shelves and wrong for asking "does this console
+     * already exist?" - a system added but not yet pointed at a folder is
+     * invalid and still very much there. Checking duplicates against `load()`
+     * let an import create a second Dreamcast beside the one the user had just
+     * added.
+     */
+    fun declared(): List<PlatformProfile> =
+        dir.listFiles { f -> f.isFile && f.name.endsWith(".json") }
+            ?.sortedBy { it.name }
+            ?.mapNotNull { f ->
+                runCatching { json.decodeFromString<PlatformProfile>(f.readText()) }.getOrNull()
+            }
+            .orEmpty()
+
+    /**
      * Bring an older profile up to date.
      *
      * `shortcuts` and `library` were early guesses at how app-based systems

@@ -115,14 +115,33 @@ object BeaconImport {
         val existing = library.all().associateBy { it.key }
         val mediaRoot = library.mediaDir.apply { mkdirs() }
 
+        // Existing shelves, looked up three ways. An id alone is not identity:
+        // this export calls the Dreamcast "DC" while the catalogue calls it
+        // "dreamcast", so an id-only check created a SECOND Dreamcast shelf and
+        // sent the imported games to it, leaving two tabs both labelled DC.
+        val known = profiles.declared().toMutableList()
+        fun shelfFor(bp: BPlatform): PlatformProfile? {
+            val slugId = slug(bp.shortName.ifBlank { bp.name })
+            return known.firstOrNull { it.id == slugId }
+                ?: known.firstOrNull { normaliseTitle(it.name) == normaliseTitle(bp.name) }
+                ?: bp.shortName.takeIf { it.isNotBlank() }?.let { short ->
+                    known.firstOrNull {
+                        it.shortName.isNotBlank() &&
+                            normaliseTitle(it.shortName) == normaliseTitle(short)
+                    }
+                }
+        }
+
         for (bp in export.platforms) {
             if (bp.games.isEmpty()) { skipped++; continue }
-            val pid = slug(bp.shortName.ifBlank { bp.name })
+            val match = shelfFor(bp)
+            // Reuse the existing shelf's id so the games land on the tab the
+            // user already has, rather than beside it.
+            val pid = match?.id ?: slug(bp.shortName.ifBlank { bp.name })
 
             // Create the platform profile if we do not already have one. The
             // player package becomes an EDITABLE launch profile, never a lookup.
-            val already = profiles.load().profiles.any { it.id == pid }
-            if (!already) {
+            if (match == null) {
                 profiles.save(
                     PlatformProfile(
                         id = pid,
@@ -148,7 +167,7 @@ object BeaconImport {
                         // Beacon launched these, but LightHouse has not, and the
                         // component is a package with no activity yet.
                         verified = false,
-                    )
+                    ).also { known += it }
                 )
                 platformCount++
             }
