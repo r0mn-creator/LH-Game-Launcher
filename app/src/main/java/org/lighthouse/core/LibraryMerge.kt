@@ -1,3 +1,6 @@
+// Copyright 2026 r0mn-creator
+// SPDX-License-Identifier: Apache-2.0
+
 package org.lighthouse.core
 
 import org.lighthouse.data.GameRecord

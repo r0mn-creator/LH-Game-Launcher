@@ -15,6 +15,7 @@ the device, not waiting for a new release.
 - [Setting up your library](#setting-up-your-library)
 - [Colour themes](#colour-themes)
 - [Credits and provenance](#credits-and-provenance)
+- [Licence](#licence)
 - [Where things live](#where-things-live)
 - [Building from source](#building-from-source)
 - [Status](#status)
@@ -228,6 +229,25 @@ by inspecting the app's own manifest and confirmed by launching a real game.
 
 Box art is fetched from libretro at runtime, onto your device, at your request.
 LH does not redistribute artwork.
+
+## Licence
+
+**[Apache License 2.0](LICENSE).** Fork it, change it, build on it, ship it —
+commercially or not. The one thing asked in return is **credit**:
+
+- Keep the `LICENSE` and `NOTICE` files with any copy you distribute.
+- Keep the copyright headers on source files you reuse.
+- If you modify a file, say so — a line in the header or your README is enough.
+- Don't imply the original author endorses your fork.
+
+That is the whole of it. Apache-2.0 was chosen over MIT because it states the
+attribution and change-marking requirements explicitly rather than leaving them
+to convention, and because it grants patent rights along with copyright ones,
+which matters for anything that might be built on later.
+
+Third-party dependencies (AndroidX, Jetpack Compose, kotlinx.serialization,
+Coil) carry their own permissive licences. Box art is fetched from libretro at
+runtime, onto your own device — LH does not redistribute artwork.
 
 ## Where things live
 
