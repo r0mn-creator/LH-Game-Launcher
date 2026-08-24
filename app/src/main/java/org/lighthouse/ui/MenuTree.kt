@@ -24,7 +24,7 @@ class MenuTree(
         fun cleanupLibrary()
         fun scrapeCovers()
         fun chooseFolder(platformId: String)
-        fun chooseApps()
+        fun chooseApps(platformId: String)
         fun editIntent(platformId: String)
         fun cycleAspect(platformId: String)
         fun setEnabled(platformId: String, enabled: Boolean)
@@ -161,7 +161,7 @@ class MenuTree(
             items = buildList {
                 if (p.isAppShelf) {
                     add(MenuItem.Action("Choose apps",
-                        "${p.games} on the shelf") { actions.chooseApps() })
+                        "${p.games} on the shelf") { actions.chooseApps(p.id) })
                 } else {
                     add(MenuItem.Action(
                         if (p.needsFolder) "Choose folder" else "Change folder",

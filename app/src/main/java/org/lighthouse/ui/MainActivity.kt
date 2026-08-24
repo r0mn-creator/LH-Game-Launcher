@@ -60,11 +60,18 @@ class MainActivity : ComponentActivity() {
     /** Bumped when the palette changes, to force a recompose. */
     private var colorEpoch by mutableIntStateOf(0)
     private var showAppPicker by mutableStateOf(false)
+    /** Which shelf the app picker is editing. Android and Windows are both
+     *  curated from installed apps, so "the app shelf" is no longer unique. */
+    private var appPickerFor by mutableStateOf<String?>(null)
     /** Non-null while first-run setup is on screen. */
     private var onboardStep by mutableStateOf<Step?>(null)
     private var onboardCursor by mutableStateOf(0)
     /** The one system chosen during first-run setup. */
     private var onboardPicked by mutableStateOf<String?>(null)
+    /** Platform ids waiting for a box-art pass, and the worker's status line. */
+    private val artQueue = java.util.concurrent.ConcurrentLinkedQueue<String>()
+    private var artStatus by mutableStateOf<String?>(null)
+    @Volatile private var artRunning = false
     /** Non-null while a long job runs; the text is what the user sees. */
     private var busy by mutableStateOf<String?>(null)
     /** Platform whose launch intent is being edited, and the working copy. */
@@ -215,7 +222,7 @@ class MainActivity : ComponentActivity() {
                         cursor = appPickerCursor.coerceIn(0, (rows.size - 1).coerceAtLeast(0)),
                         onSelect = { appPickerCursor = it },
                         onToggle = ::toggleApp,
-                        onClose = { showAppPicker = false; reload() },
+                        onClose = { showAppPicker = false; appPickerFor = null; reload() },
                     )
                 } else if (showDrawer) {
                     AppDrawerScreen(
@@ -250,6 +257,7 @@ class MainActivity : ComponentActivity() {
                         systemIndex = systemIndex,
                         cursor = cursor,
                         onChooseFolder = ::chooseFolder,
+                        onChooseApps = { id -> appPickerFor = id; showAppPicker = true },
                         onImport = ::runImport,
                         onLaunch = ::launch,
                         onSelect = { i -> cursor = cursor.copy(index = i) },
@@ -261,6 +269,7 @@ class MainActivity : ComponentActivity() {
                         },
                         onSettings = { showSettings = true },
                         onApps = ::openDrawer,
+                        artStatus = artStatus,
                     )
                 }
                 busy?.let { BusyOverlay(it) }
@@ -311,6 +320,11 @@ class MainActivity : ComponentActivity() {
                 ?.takeIf { it >= 0 }
             systemIndex = (wanted ?: systemIndex).coerceIn(0, (built.size - 1).coerceAtLeast(0))
             cursor = cursor.copy(index = 0)
+            // Anything newly scanned queues itself. Granting a folder, adding a
+            // system and finishing an import all end here, so this is the one
+            // place that needs to know - and asking for art should never be a
+            // thing the user remembers to do.
+            queueArtForAll()
         }
     }
 
@@ -458,7 +472,7 @@ class MainActivity : ComponentActivity() {
                 verifyFor != null -> Unit          // must be answered
                 editingPickPackage -> editingPickPackage = false
                 editingId != null -> { editingId = null; editingSpec = null }
-                showAppPicker -> { showAppPicker = false; reload() }
+                showAppPicker -> { showAppPicker = false; appPickerFor = null; reload() }
                 showDrawer -> showDrawer = false
                 showSettings -> menuBack()
                 onboardStep != null -> onboardBack()
@@ -607,48 +621,136 @@ class MainActivity : ComponentActivity() {
      * per platform and then one download per game, so a silent freeze would be
      * indistinguishable from a hang.
      */
-    private fun scrapeCovers() {
-        if (busy != null) return
-        val targets = pages.flatMap { pg ->
-            pg.games
-                .filter { it.coverPath == null && (it.entry != null || it.record != null) }
-                .map { g ->
-                    org.lighthouse.scrape.CoverScraper.Target(
-                        key = g.record?.key ?: g.entry?.key ?: g.title,
-                        platformId = pg.profile.id,
-                        platformName = pg.profile.name,
-                        title = g.title,
+    // ---- box art, fetched on its own ---------------------------------------
+
+    /**
+     * Games we have already looked up and failed to match.
+     *
+     * Without this the queue would re-request every art-less game on every
+     * launch: the misses are permanent (libretro simply has no cover for that
+     * title) so retrying them is pure network traffic and a status line that
+     * never goes away. "Get missing box art" clears the list to force a retry.
+     */
+    private val artMissFile: java.io.File
+        get() = java.io.File(getExternalFilesDir(null), "art_misses.txt")
+
+    private fun artMisses(): MutableSet<String> = runCatching {
+        if (artMissFile.isFile) artMissFile.readLines().filter { it.isNotBlank() }.toMutableSet()
+        else mutableSetOf()
+    }.getOrDefault(mutableSetOf())
+
+    private fun rememberArtMisses(keys: Collection<String>) {
+        if (keys.isEmpty()) return
+        runCatching { artMissFile.appendText(keys.joinToString("\n", postfix = "\n")) }
+    }
+
+    /** Queue a platform for a background art pass. Safe to call repeatedly. */
+    private fun queueArt(platformId: String) {
+        if (!artQueue.contains(platformId)) artQueue.add(platformId)
+        startArtWorker()
+    }
+
+    /**
+     * One worker, one platform at a time, off the main thread.
+     *
+     * Deliberately serial: a handheld on hotel wifi does not benefit from eight
+     * parallel index downloads, and a single ordered queue is what makes the
+     * status line meaningful.
+     */
+    private fun startArtWorker() {
+        if (artRunning) return
+        artRunning = true
+        lifecycleScope.launch {
+            try {
+                while (true) {
+                    val id = artQueue.poll() ?: break
+                    val page = pages.firstOrNull { it.profile.id == id } ?: continue
+                    val misses = artMisses()
+                    val targets = page.games
+                        .filter { it.coverPath == null && (it.entry != null || it.record != null) }
+                        .map { g ->
+                            org.lighthouse.scrape.CoverScraper.Target(
+                                key = g.record?.key ?: g.entry?.key ?: g.title,
+                                platformId = page.profile.id,
+                                platformName = page.profile.name,
+                                title = g.title,
+                            )
+                        }
+                        .filterNot { it.key in misses }
+                    if (targets.isEmpty()) continue
+
+                    artStatus = "Box art: ${page.profile.shortName}…"
+                    val report = withContext(Dispatchers.IO) {
+                        org.lighthouse.scrape.CoverScraper.scrape(targets, app.library.mediaDir) { step ->
+                            // Short form only: this sits in the hint bar beside
+                            // Play, not in a dialog with room to explain.
+                            runOnUiThread {
+                                artStatus = "Box art: ${page.profile.shortName} " +
+                                    step.substringAfterLast('(').substringBefore(')')
+                                        .takeIf { it.contains(" of ") }.orEmpty()
+                            }
+                        }
+                    }
+                    applyArt(report, targets)
+                    rememberArtMisses(
+                        targets.map { it.key }.toSet() - report.found.map { it.key }.toSet()
                     )
                 }
+            } finally {
+                artRunning = false
+                artStatus = null
+            }
         }
-        if (targets.isEmpty()) { toast("Every game already has box art"); return }
+    }
 
-        busy = "Looking for box art for ${targets.size} game(s)…"
-        lifecycleScope.launch {
-            val report = withContext(Dispatchers.IO) {
-                org.lighthouse.scrape.CoverScraper.scrape(
-                    targets, app.library.mediaDir
-                ) { step -> runOnUiThread { busy = step } }
-            }
-            // Attach what came back. A scanned game with no record yet gets one,
-            // which is the only way Xbox and Xbox 360 art can be kept at all -
-            // those platforms came from a folder scan, not from the import.
-            val byKey = targets.associateBy { it.key }
-            val updates = report.found.mapNotNull { f ->
-                val t = byKey[f.key] ?: return@mapNotNull null
-                val existing = app.library.all().firstOrNull { it.key == f.key }
-                (existing ?: org.lighthouse.data.GameRecord(
-                    key = f.key,
-                    platformId = t.platformId,
-                    title = t.title,
-                    uri = f.key.takeIf { it.startsWith("content://") },
-                )).copy(coverPath = f.file.absolutePath)
-            }
-            if (updates.isNotEmpty()) app.library.put(updates)
-            busy = null
-            reload()
-            toast(report.summary() + report.notes.firstOrNull()?.let { " — $it" }.orEmpty())
+    /** Attach fetched covers, creating records for scanned games that lack one. */
+    private fun applyArt(
+        report: org.lighthouse.scrape.CoverScraper.Report,
+        targets: List<org.lighthouse.scrape.CoverScraper.Target>,
+    ) {
+        if (report.found.isEmpty()) return
+        val byKey = targets.associateBy { it.key }
+        val updates = report.found.mapNotNull { f ->
+            val t = byKey[f.key] ?: return@mapNotNull null
+            val existing = app.library.all().firstOrNull { it.key == f.key }
+            (existing ?: org.lighthouse.data.GameRecord(
+                key = f.key,
+                platformId = t.platformId,
+                title = t.title,
+                uri = f.key.takeIf { it.startsWith("content://") },
+            )).copy(coverPath = f.file.absolutePath)
         }
+        if (updates.isNotEmpty()) { app.library.put(updates); reload() }
+    }
+
+    /** Queue every platform that still has art-less games. */
+    private fun queueArtForAll() {
+        val misses = artMisses()
+        for (pg in pages) {
+            val pending = pg.games.any {
+                it.coverPath == null && (it.entry != null || it.record != null) &&
+                    (it.record?.key ?: it.entry?.key ?: it.title) !in misses
+            }
+            if (pending) queueArt(pg.profile.id)
+        }
+    }
+
+    /**
+     * Force a full retry, including titles that previously found no match.
+     *
+     * The background pass skips known misses forever, which is right for
+     * routine use and wrong when libretro has since added the cover - so the
+     * manual action clears that memory and re-queues everything.
+     */
+    private fun scrapeCovers() {
+        runCatching { artMissFile.delete() }
+        val before = artQueue.size
+        queueArtForAll()
+        toast(
+            if (artQueue.isEmpty() && !artRunning) "Every game already has box art"
+            else "Fetching box art in the background" +
+                (artQueue.size - before).let { if (it > 0) " — ${artQueue.size} system(s)" else "" }
+        )
     }
 
     // ---- first-run setup ----------------------------------------------------
@@ -865,7 +967,9 @@ class MainActivity : ComponentActivity() {
             showSettings = false
             this@MainActivity.chooseFolder(platformId)
         }
-        override fun chooseApps() { showAppPicker = true }
+        override fun chooseApps(platformId: String) {
+            appPickerFor = platformId; showAppPicker = true
+        }
         override fun editIntent(platformId: String) = startEditing(platformId)
         override fun cycleAspect(platformId: String) = this@MainActivity.cycleAspect(platformId)
         override fun setEnabled(platformId: String, enabled: Boolean) =
@@ -932,9 +1036,12 @@ class MainActivity : ComponentActivity() {
     }
 
     /** The installed_apps platform (the Android shelf), if one exists. */
-    private fun appShelfProfile(): PlatformProfile? =
-        app.profiles.load().profiles
-            .firstOrNull { it.source.provider == org.lighthouse.data.SourceSpec.INSTALLED_APPS }
+    /** The shelf the picker is editing, or the only one if nothing is pinned. */
+    private fun appShelfProfile(): PlatformProfile? {
+        val all = app.profiles.load().profiles
+            .filter { it.source.provider == org.lighthouse.data.SourceSpec.INSTALLED_APPS }
+        return appPickerFor?.let { id -> all.firstOrNull { it.id == id } } ?: all.firstOrNull()
+    }
 
     /** The ratios real box art actually comes in. */
     private val aspectPresets = listOf("3:4", "1:1", "8:7", "3:5", "2:3", "1:2")
@@ -1189,7 +1296,7 @@ class MainActivity : ComponentActivity() {
 
     private fun toggleApp(pkg: String, add: Boolean) {
         val p = appShelfProfile() ?: run {
-            toast("Add the Android system first")
+            toast("Add an app-based system first, such as Android or Windows")
             return
         }
         val next = if (add) (p.source.packages + pkg).distinct()
@@ -1212,6 +1319,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun addSystem(system: org.lighthouse.data.CatalogueSystem) {
+        // Ids are not enough to spot a duplicate: an imported Dreamcast arrives
+        // as "dc" while the catalogue calls it "dreamcast", and the result was
+        // two shelves both labelled DC. Compare the names as the user reads
+        // them - "Sega Dreamcast" and "Sega - Dreamcast" are one console.
+        val already = app.profiles.load().profiles.firstOrNull {
+            it.id == system.id ||
+                org.lighthouse.data.normaliseTitle(it.name) ==
+                org.lighthouse.data.normaliseTitle(system.name)
+        }
+        if (already != null && already.id != system.id) {
+            toast("${system.name} is already here as \"${already.name}\"")
+            return
+        }
         val emu = app.catalogue.installedFor(system).firstOrNull()
         val order = (pages.maxOfOrNull { it.profile.order } ?: 0) + 1
         app.profiles.save(app.catalogue.profileFor(system, emu, order))?.let { toast(it) }

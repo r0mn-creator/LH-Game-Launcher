@@ -73,9 +73,12 @@ class CatalogueStore(private val context: Context) {
         emulator: CatalogueEmulator?,
         order: Int,
     ): PlatformProfile {
+        // A system with no file extensions has nothing to scan for. Android and
+        // Windows both work this way: the games are apps or shortcuts the user
+        // has already created elsewhere (GameNative, for instance), and the
+        // shelf is a list they curate from the app library - not a folder.
         val provider =
-            if (system.id == "android") SourceSpec.INSTALLED_APPS
-            else if (system.extensions.isEmpty()) SourceSpec.SHORTCUTS
+            if (system.extensions.isEmpty()) SourceSpec.INSTALLED_APPS
             else SourceSpec.FOLDER
 
         return PlatformProfile(

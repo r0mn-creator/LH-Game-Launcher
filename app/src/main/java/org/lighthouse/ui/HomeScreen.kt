@@ -72,7 +72,11 @@ data class SystemPage(
     val notes: List<String> = emptyList(),
     /** Set when the profile itself is broken; the page shows the reason. */
     val problem: String? = null,
-)
+) {
+    /** Curated from installed apps rather than scanned from a folder. */
+    val isAppShelf: Boolean
+        get() = profile.source.provider == org.lighthouse.data.SourceSpec.INSTALLED_APPS
+}
 
 private const val COLUMNS = 5
 
@@ -94,6 +98,8 @@ fun HomeScreen(
     systemIndex: Int,
     cursor: GridCursor,
     onChooseFolder: (String) -> Unit,
+    /** The Android shelf is curated from installed apps, not scanned. */
+    onChooseApps: (String) -> Unit,
     onImport: () -> Unit,
     onLaunch: (SystemPage, DisplayGame) -> Unit,
     // Every on-screen control is also a touch target. The hints are not a
@@ -102,6 +108,8 @@ fun HomeScreen(
     onSelect: (Int) -> Unit,
     onPrevSystem: () -> Unit,
     onNextSystem: () -> Unit,
+    /** Background work, shown quietly rather than blocking the screen. */
+    artStatus: String? = null,
     onPickSystem: (Int) -> Unit,
     onSettings: () -> Unit,
     onApps: () -> Unit,
@@ -146,8 +154,8 @@ fun HomeScreen(
             ) {
                 when {
                     page == null -> CentreMessage("No systems yet. Press Y to add one.")
-                    page.problem != null -> ProblemPane(page, onChooseFolder)
-                    page.games.isEmpty() -> ProblemPane(page, onChooseFolder)
+                    page.problem != null -> ProblemPane(page, onChooseFolder, onChooseApps)
+                    page.games.isEmpty() -> ProblemPane(page, onChooseFolder, onChooseApps)
                     else -> {
                         val anyPlayable = page.games.any { it.playable }
                         CoverGrid(
@@ -161,18 +169,31 @@ fun HomeScreen(
 
             page?.let { p ->
                 if (p.games.isNotEmpty() && p.games.none { it.playable }) {
-                    SystemNotice(
-                        p.games.size.toString() +
-                            " games imported — choose this system's folder to play them"
-                    ) { onChooseFolder(p.profile.id) }
+                    // An app shelf has no folder to grant - its entries come from
+                    // the app library - so offering "Choose folder" here sends the
+                    // user to a picker that cannot help them.
+                    if (p.isAppShelf) {
+                        SystemNotice(
+                            p.games.size.toString() +
+                                " apps imported — pick which of them to show here",
+                            action = "Choose apps…",
+                        ) { onChooseApps(p.profile.id) }
+                    } else {
+                        SystemNotice(
+                            p.games.size.toString() +
+                                " games imported — choose this system's folder to play them"
+                        ) { onChooseFolder(p.profile.id) }
+                    }
                 }
             }
             BottomBar(
                 selected = selected,
+                isAppShelf = page?.isAppShelf == true,
                 onImport = onImport,
                 onApps = onApps,
                 onSettings = onSettings,
                 onPlay = { if (page != null && selected != null) onLaunch(page, selected) },
+                artStatus = artStatus,
             )
         }
     }
@@ -432,7 +453,11 @@ private fun CoverTile(
 }
 
 @Composable
-private fun ProblemPane(page: SystemPage, onChooseFolder: (String) -> Unit) {
+private fun ProblemPane(
+    page: SystemPage,
+    onChooseFolder: (String) -> Unit,
+    onChooseApps: (String) -> Unit,
+) {
     val theme = LocalTheme.current
     Column(
         Modifier
@@ -450,19 +475,24 @@ private fun ProblemPane(page: SystemPage, onChooseFolder: (String) -> Unit) {
             Text(it, color = theme.textSecondary, fontSize = 15.sp)
             Spacer(Modifier.height(4.dp))
         }
-        val needsFolder = page.problem?.contains("no roots") == true ||
-            page.notes.any { it.contains("folder", ignoreCase = true) }
-        if (needsFolder) {
+        val needsFolder = !page.isAppShelf && (page.problem?.contains("no roots") == true ||
+            page.notes.any { it.contains("folder", ignoreCase = true) })
+        if (page.isAppShelf || needsFolder) {
             Spacer(Modifier.height(16.dp))
             Box(
                 Modifier
                     .clip(RoundedCornerShape(8.dp))
                     .background(theme.primary.copy(alpha = 0.18f))
                     .border(1.dp, theme.primary, RoundedCornerShape(8.dp))
-                    .clickable { onChooseFolder(page.profile.id) }
+                    .clickable {
+                        if (page.isAppShelf) onChooseApps(page.profile.id) else onChooseFolder(page.profile.id)
+                    }
                     .padding(horizontal = 18.dp, vertical = 10.dp)
             ) {
-                Text("Choose folder…", color = theme.primary, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                Text(
+                    if (page.isAppShelf) "Choose apps…" else "Choose folder…",
+                    color = theme.primary, fontSize = 15.sp, fontWeight = FontWeight.Medium,
+                )
             }
         }
     }
@@ -477,7 +507,7 @@ private fun CentreMessage(msg: String) {
 }
 
 @Composable
-private fun SystemNotice(text: String, onFix: () -> Unit) {
+private fun SystemNotice(text: String, action: String = "Choose folder", onFix: () -> Unit) {
     val theme = LocalTheme.current
     Row(
         Modifier
@@ -495,7 +525,7 @@ private fun SystemNotice(text: String, onFix: () -> Unit) {
                 .clickable(onClick = onFix)
                 .padding(horizontal = 12.dp, vertical = 4.dp)
         ) {
-            Text("Choose folder", color = theme.primary, fontSize = 13.sp,
+            Text(action, color = theme.primary, fontSize = 13.sp,
                 fontWeight = FontWeight.Medium)
         }
     }
@@ -504,10 +534,12 @@ private fun SystemNotice(text: String, onFix: () -> Unit) {
 @Composable
 private fun BottomBar(
     selected: DisplayGame?,
+    isAppShelf: Boolean,
     onImport: () -> Unit,
     onApps: () -> Unit,
     onSettings: () -> Unit,
     onPlay: () -> Unit,
+    artStatus: String? = null,
 ) {
     val theme = LocalTheme.current
     Row(
@@ -527,9 +559,18 @@ private fun BottomBar(
 
         Spacer(Modifier.weight(1f))
 
+        // Box art arrives on its own; this is the only trace it leaves. It must
+        // never block or steal the cursor - the user is here to play a game,
+        // not to watch a download.
+        artStatus?.let {
+            Text(it, color = theme.textSecondary, fontSize = 13.sp)
+            Spacer(Modifier.width(22.dp))
+        }
+
         // Says what A will actually do, including when it cannot do it.
         val label = when {
             selected == null -> "—"
+            !selected.playable && isAppShelf -> "Not on this device"
             !selected.playable -> "Needs folder access"
             else -> "Play"
         }

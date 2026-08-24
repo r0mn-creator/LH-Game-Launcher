@@ -93,8 +93,9 @@ class ProfileStore(private val context: Context) {
                 problems[f.name] = "could not be read: ${e?.message ?: e?.let { it::class.simpleName }}"
                 continue
             }
-            when (val c = p.validate()) {
-                is ProfileCheck.Ok -> profiles += p
+            val migrated = migrate(p, f)
+            when (val c = migrated.validate()) {
+                is ProfileCheck.Ok -> profiles += migrated
                 is ProfileCheck.Invalid -> problems[p.id.ifBlank { f.name }] = c.reason
             }
         }
@@ -112,6 +113,28 @@ class ProfileStore(private val context: Context) {
             unique += p
         }
         return Loaded(unique.sortedBy { it.order }, problems)
+    }
+
+    /**
+     * Bring an older profile up to date.
+     *
+     * `shortcuts` and `library` were early guesses at how app-based systems
+     * work. In practice a Windows game is a shortcut the user already made in
+     * GameNative and then adds to the shelf by hand, exactly like the Android
+     * shelf - so a system with no file extensions is curated from installed
+     * apps. Rewritten on disk rather than only in memory, so the file the user
+     * can open agrees with what the launcher is doing.
+     */
+    private fun migrate(p: PlatformProfile, f: File): PlatformProfile {
+        val stale = p.source.provider == SourceSpec.SHORTCUTS ||
+            p.source.provider == SourceSpec.LIBRARY
+        if (!stale || p.source.extensions.isNotEmpty()) return p
+        val next = p.copy(source = p.source.copy(provider = SourceSpec.INSTALLED_APPS))
+        runCatching {
+            f.writeText(json.encodeToString(PlatformProfile.serializer(), next))
+            Log.i(TAG, "migrated ${p.id} from ${p.source.provider} to installed_apps")
+        }
+        return next
     }
 
     /**
