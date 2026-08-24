@@ -1,10 +1,10 @@
 # Custom platform + Launch Intent editor
 
-The feature Beacon was missing. Beacon *has* a `launch_command` column, but the
-UI only exposes it under Edit Platform ▸ Advanced — which Custom platforms do
-not have — and writing it straight into the DB is not honoured. So an emulator
-outside Beacon's hard-coded registry can never be launched, no matter what the
-user does.
+The feature that makes a custom platform actually launchable. It is common for
+a launcher to store a launch command and then never expose it, or to ignore it
+for custom platforms — at which point an emulator outside the built-in list can
+never be launched, no matter what the user does. This is the section that fixes
+that.
 
 **In LightHouse the launch intent is a first-class, editable part of every
 platform.** No registry, no allow-list, no "app not recognised".
@@ -15,7 +15,7 @@ platform.** No registry, no allow-list, no "app not recognised".
     2  ROMs folder   SAF tree picker; takePersistableUriPermission immediately
     3  Launch intent how a game is handed to that app   <-- the new section
 
-Steps 1 and 2 are what Beacon already does. Step 3 is the whole point.
+Steps 1 and 2 are the easy part. Step 3 is the whole point.
 
 ## Step 1 — choosing the emulator
 
@@ -66,7 +66,7 @@ an Xbox disc…"*. Add the flag and the same intent boots Halo 2 at 59.9 FPS.
 
 The app holds **no storage permissions at all**, so there is no fallback path.
 Leaving this off produces a launcher that looks like it works and never loads a
-game — precisely Beacon's failure mode. It costs nothing when unnecessary.
+game — precisely the failure mode this avoids. It costs nothing when unnecessary.
 
 ### ⚠️ The Test button must not lie
 
@@ -118,5 +118,6 @@ section.
 
 Presets are seed rows the user can edit, not a compiled table. When an emulator
 changes its contract — or a new one appears — the user fixes it in the app in
-under a minute. Beacon needs a new release for the same change, which is why
+under a minute. A compiled-in registry needs a new release for the same
+change, which is why
 Canary AEX still cannot be launched from it.

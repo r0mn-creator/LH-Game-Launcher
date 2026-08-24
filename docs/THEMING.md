@@ -59,7 +59,7 @@ or a `content://` / file URI the user picked. `dim` and `blur` exist because
 box art is unreadable over a busy wallpaper; both apply at render time so the
 original image is never modified.
 
-Per-platform override is supported — Beacon's schema already carries
+Per-platform override is supported — an imported schema may already carry
 `background_image_path` per platform, so imported platforms can keep theirs.
 
 ## Fonts
@@ -76,8 +76,8 @@ silently substituting a font makes a broken theme look like a design choice.
 `scale` multiplies every size at once, which is the control that actually
 matters on a 7-inch handheld.
 
-⚠️ Beacon's own drawables and artwork are its property and are not reused.
-Only Inter is shared, and only because its licence explicitly allows it.
+⚠️ No third-party drawables or artwork are reused. Everything shipped here is
+either our own or under a licence that explicitly allows it.
 
 ## Settings ▸ Appearance
 

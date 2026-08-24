@@ -4,8 +4,8 @@
 
 Adding, editing or removing an emulator must never require a recompile, a
 release, or a reinstall. A Gradle module per emulator would mean all three, and
-would reproduce Beacon's actual defect — a fixed set of supported apps that only
-the developer can extend — with extra ceremony on top.
+would reproduce the defect this project exists to avoid — a fixed set of
+supported apps that only the developer can extend — with extra ceremony on top.
 
 Having read three real launch contracts (X1-BOX, Xenia AE, GameNative), they
 differ **only in data**: component, action, which slot the game goes in, which
@@ -128,7 +128,7 @@ Config-driven means errors surface at runtime, not compile time. So:
   reason, never silently ignored.
 - Unknown `provider` or `rom_mode` values are reported, not defaulted — a typo
   that silently degrades to "launch the app with no ROM" would be precisely the
-  Beacon bug.
+  failure.
 
 
 ## Library sources — self-contained, ES-DE opt-in
@@ -140,7 +140,7 @@ own metadata and art; it never depends on another frontend being installed.
 Settings ▸ Library ▸ Import. It is a manual action, never a background sync.
 Worth having because the user's ROMs already live in
 `Games/ESDE/ROMs/<system>` on the SD card, so ES-DE's `gamelist.xml` and
-`downloaded_media/` cover titles Beacon never scraped.
+`downloaded_media/` cover titles that were never scraped.
 
 Rules:
 - Import is **additive and non-destructive**: it fills empty fields and never

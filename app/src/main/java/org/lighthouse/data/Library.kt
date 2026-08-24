@@ -38,8 +38,8 @@ data class GameRecord(
     /**
      * Filename without extension or bracketed region tags, lowercased.
      * Used to re-link an imported record to a scanned file when the URI does
-     * not match - which is the normal case, because a Beacon document URI was
-     * granted to Beacon, not to us.
+     * not match - the normal case, because a document URI is granted to the app
+     * that asked for it, not to us.
      */
     val matchName: String get() = normaliseTitle(title)
 }
@@ -47,9 +47,10 @@ data class GameRecord(
 /**
  * Titles compared with punctuation AND spacing removed.
  *
- * Beacon stored "Killer7" where the ROM is "Killer 7 (USA) (Disc 1).iso"; with
- * spaces significant those are different games, the record looks orphaned, and
- * a library cleanup would throw away its artwork. Region and disc tags are
+ * An imported record may read "Killer7" where the ROM is
+ * "Killer 7 (USA) (Disc 1).iso"; with spaces significant those are different
+ * games, the record looks orphaned, and a library cleanup would throw away its
+ * artwork. Region and disc tags are
  * dropped first because they are not part of the title.
  */
 fun normaliseTitle(s: String): String =
@@ -107,9 +108,9 @@ class LibraryStore(private val context: Context) {
     /**
      * Forget records whose game is no longer on disk.
      *
-     * Imported libraries accumulate these: Beacon listed each disc of a
-     * multi-disc set and each .cue beside a .gdi as separate games, so after
-     * LightHouse collapses those to one entry the leftovers sit on the shelf
+     * Imported libraries accumulate these: a source that lists each disc of a
+     * multi-disc set, and each .cue beside a .gdi, as separate games leaves
+     * records behind once LightHouse collapses them to one entry - they sit
      * greyed out forever. Deliberately an explicit action, never automatic - a
      * game can also be "missing" because an SD card is unmounted, and silently
      * deleting its metadata and art would be unrecoverable.

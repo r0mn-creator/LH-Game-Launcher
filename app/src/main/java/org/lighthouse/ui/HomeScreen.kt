@@ -112,8 +112,8 @@ fun HomeScreen(
             .fillMaxSize()
             .background(theme.background)
     ) {
-        // Ambient wash behind the grid. Beacon has a flat glow; deriving it from
-        // the selected cover makes the page feel like it belongs to the game.
+        // Ambient wash behind the grid, derived from the selected cover so the
+        // page feels like it belongs to the game rather than to the launcher.
         AmbientGlow(selected)
 
         Column(Modifier.fillMaxSize()) {
@@ -142,7 +142,7 @@ fun HomeScreen(
                     }
             ) {
                 when {
-                    page == null -> CentreMessage("No systems yet. Import from Beacon or add a platform.")
+                    page == null -> CentreMessage("No systems yet. Press Y to add one.")
                     page.problem != null -> ProblemPane(page, onChooseFolder)
                     page.games.isEmpty() -> ProblemPane(page, onChooseFolder)
                     else -> {

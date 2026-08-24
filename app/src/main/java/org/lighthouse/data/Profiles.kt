@@ -6,9 +6,10 @@ import kotlinx.serialization.Serializable
 /**
  * A platform is DATA, never code.
  *
- * Adding, editing or removing an emulator must never need a recompile. Beacon's
- * defining flaw is a hard-coded package registry: an unrecognised emulator gets
- * a bare launcher intent with no ROM attached, so it opens to its own menu and
+ * Adding, editing or removing an emulator must never need a recompile. The
+ * failure this avoids is a hard-coded package registry: an unrecognised emulator
+ * gets a bare launcher intent with no ROM attached, so it opens to its own menu
+ * and
  * the game never loads. Everything that differs between emulators lives in this
  * file's types and is loaded from JSON at runtime.
  *
@@ -125,7 +126,7 @@ sealed interface ProfileCheck {
 /**
  * Validate on load. An unknown provider or rom_mode is REPORTED, never
  * defaulted: silently degrading to "launch the app with no ROM" is precisely
- * the Beacon bug this project exists to avoid.
+ * the failure this project exists to avoid.
  */
 fun PlatformProfile.validate(): ProfileCheck {
     if (id.isBlank()) return ProfileCheck.Invalid("missing id")
@@ -159,7 +160,7 @@ fun PlatformProfile.validate(): ProfileCheck {
     if (launch.action.isBlank()) return ProfileCheck.Invalid("launch action is blank")
     // A bare package (no '/') is legitimate and often preferable: with
     // ACTION_VIEW + a content URI, Android resolves to whichever activity in
-    // that app actually declares a matching filter. Beacon only ever stored a
+    // that app actually declares a matching filter. An import may carry only a
     // package, so requiring package/activity would reject every imported
     // platform - which it did, on the first real import.
     launch.component?.let {

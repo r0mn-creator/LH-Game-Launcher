@@ -29,7 +29,7 @@ import androidx.compose.ui.unit.sp
 import org.lighthouse.theme.LocalTheme
 
 /**
- * The app drawer, reached with B from the home screen - same as Beacon.
+ * The app drawer, reached with B from the home screen.
  *
  * Grid of every launchable app, driven by the pad with the same explicit cursor
  * the game grid uses, and tappable.

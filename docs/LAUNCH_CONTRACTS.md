@@ -4,8 +4,9 @@ How LightHouse starts a game in each target app. Everything marked **VERIFIED**
 was tested on the Odin 2 and observed to reach gameplay; anything
 else is read from source or a manifest and must not be trusted until tested.
 
-The whole reason this project exists: **Beacon recognises emulators from a
-hard-coded package registry.** An unrecognised package gets a bare
+The whole reason this project exists: **a launcher that recognises emulators
+from a hard-coded package registry cannot launch anything outside it.** An
+unrecognised package gets a bare
 `ACTION_MAIN`/`LAUNCHER` intent with no data URI, so the ROM is never passed and
 the emulator opens to its own menu. LightHouse must therefore treat the launch
 intent as **user-editable data, never a compiled-in table.**
@@ -106,7 +107,7 @@ dynamic shortcuts from the Switch emulators whose **shortcut id IS the
    Seeing every launcher's pins needs `FLAG_MATCH_PINNED_BY_ANY_LAUNCHER`, which
    requires the system `ACCESS_SHORTCUTS` permission a normal app cannot hold.
    **So a shortcut must be pinned while LightHouse is the default launcher.**
-   Anything pinned today (Beacon is currently default) will not be visible.
+   Anything pinned under a different launcher will not be visible.
 2. Querying shortcuts at all requires being the active home app.
 
 This makes the fallback sound but order-dependent, and the UI has to say so
@@ -118,7 +119,8 @@ rather than silently showing an empty Windows section.
 
 - **No hard-coded emulator registry.** A platform's launch method is stored
   data: component, action, mime, flags, and how the payload is passed
-  (data URI / extra / shortcut). This is the single thing Beacon got wrong.
+  (data URI / extra / shortcut). This is the single thing a fixed registry
+  gets wrong.
 - **Three payload shapes must be first-class**, because the platforms genuinely
   differ:
   a. content URI  → Xbox, Xbox 360 (file-backed, scanned from folders)
@@ -132,7 +134,7 @@ rather than silently showing an empty Windows section.
 
 ## Device inventory (Odin 2, 2026-08-23)
 
-    default launcher   com.radikal.gamelauncher/.MainActivity   (Beacon 1.8.22)
+    default launcher   whichever launcher is currently set as Home
     Xbox               com.izzy2lost.x1box 1.2.5 · org.xemucae 1.2.5
     Xbox 360           org.xeniaae.aex 0.4.0-aex · org.xeniaae 0.2.0
                        org.xeniaae.canary 0.3.0 · aenu.ax360e.free 1.19

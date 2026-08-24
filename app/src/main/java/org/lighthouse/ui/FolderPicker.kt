@@ -10,10 +10,10 @@ import org.lighthouse.data.ProfileStore
  * Adding a ROM folder.
  *
  * SAF grants do NOT transfer between apps and do not survive a reinstall, so
- * LightHouse has to take its own persistable permission for every tree. The
- * Beacon export contains perfectly valid tree URIs that LightHouse still cannot
- * read for exactly this reason - the URI is right, the grant is missing. That
- * is why importing a library still needs the user to re-pick each folder once,
+ * LightHouse has to take its own persistable permission for every tree. An
+ * imported library carries perfectly valid tree URIs that LightHouse still
+ * cannot read for exactly this reason - the URI is right, the grant is missing.
+ * That is why importing still needs the user to re-pick each folder once,
  * and why the UI has to say so instead of showing an empty section.
  */
 object FolderPicker {
@@ -21,8 +21,8 @@ object FolderPicker {
     /**
      * @param initial a tree URI to open the picker AT.
      *
-     * After a Beacon import we already know the exact folder for every system -
-     * the URI is right, only the grant is missing. Seeding EXTRA_INITIAL_URI
+     * After an import we already know the exact folder for every system - the
+     * URI is right, only the grant is missing. Seeding EXTRA_INITIAL_URI
      * turns re-granting into one tap per system instead of navigating to the SD
      * card and hunting for the folder eleven times. Without it the picker opens
      * at internal storage root, which Android refuses to grant at all.
@@ -76,7 +76,7 @@ object FolderPicker {
      * A folder source needs attention when it has no roots at all, or when none
      * of its roots is currently readable. The second case is the normal state
      * after an import: SAF grants belong to the app that asked for them, so
-     * Beacon's URIs are valid but unusable until LightHouse takes its own.
+     * the imported URIs are valid but unusable until LightHouse takes its own.
      */
     fun needsFolder(context: Context, roots: List<String>): Boolean {
         if (roots.isEmpty()) return true

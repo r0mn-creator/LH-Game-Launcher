@@ -79,9 +79,9 @@ class MainActivity : ComponentActivity() {
     /**
      * Systems still waiting for a folder, walked one picker at a time.
      *
-     * After a Beacon import every system needs its folder re-granted (a SAF
-     * grant belongs to the app that asked for it), so making the user find each
-     * one separately would be eleven trips through the UI for a single task.
+     * After importing a library every system needs its folder re-granted (a
+     * SAF grant belongs to the app that asked for it), so making the user find
+     * each one separately would be eleven trips through the UI for one task.
      */
     private var setupQueue: List<String> = emptyList()
     private var setupTotal = 0
@@ -459,7 +459,7 @@ class MainActivity : ComponentActivity() {
                 showDrawer -> showDrawer = false
                 showSettings -> menuBack()
                 onboardStep != null -> onboardBack()
-                // On the home screen B is the app drawer, as on Beacon.
+                // On the home screen B opens the app drawer.
                 else -> openDrawer()
             }
             Nav.MENU -> if (showSettings) {

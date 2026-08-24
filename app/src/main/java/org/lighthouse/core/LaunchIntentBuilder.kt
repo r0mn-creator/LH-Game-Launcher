@@ -9,9 +9,10 @@ import org.lighthouse.data.LaunchSpec
 /**
  * Turns a LaunchSpec + a game into a real Intent.
  *
- * This is the heart of LightHouse. Beacon fails here: for an emulator it does
- * not recognise it sends ACTION_MAIN/LAUNCHER with no data, so the emulator
- * opens to its own menu and the ROM is never passed. Everything below is driven
+ * This is the heart of LightHouse. The failure mode it exists to avoid is
+ * sending ACTION_MAIN/LAUNCHER with no data for an emulator that is not
+ * recognised: the emulator opens to its own menu and the ROM is never passed,
+ * which looks like a launch and is not one. Everything below is driven
  * by the profile, so a new or changed emulator is a config edit, not a release.
  */
 object LaunchIntentBuilder {
@@ -38,9 +39,9 @@ object LaunchIntentBuilder {
             if (!c.contains('/')) {
                 // Bare package: constrain the intent to this app and let Android
                 // choose the activity that declares a matching filter. This is
-                // what makes an imported Beacon platform work at all - Beacon
-                // records only a package - and it is more robust than pinning an
-                // activity name that may be renamed in the next release.
+                // what makes an imported platform work at all, since an import
+                // often carries only a package name, and it is more robust than
+                // pinning an activity that may be renamed in the next release.
                 intent.setPackage(c)
                 return@let
             }

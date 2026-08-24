@@ -216,7 +216,7 @@ private fun ContentRow(item: MenuItem, focused: Boolean, onClick: () -> Unit) {
     }
 
     val danger = (item as? MenuItem.Action)?.danger == true
-    // Cards, like Beacon's platform list - easier to scan than flat rows.
+    // Cards rather than flat rows - easier to scan at arm's length.
     Row(
         Modifier
             .fillMaxWidth()

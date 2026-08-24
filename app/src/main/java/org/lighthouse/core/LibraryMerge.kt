@@ -23,8 +23,8 @@ data class DisplayGame(
  * Merge scanned files with stored metadata.
  *
  * Matching is by URI first, then by normalised name. The name fallback is not a
- * nicety: an imported Beacon record carries a document URI that was granted to
- * *Beacon*, so after the user re-picks the folder LightHouse gets a different
+ * nicety: an imported record carries a document URI that was granted to the app
+ * it came from, so once the user re-picks the folder LightHouse gets a different
  * URI for the very same file. Without the name pass, every imported game would
  * appear twice - once with art and unplayable, once playable and blank.
  */

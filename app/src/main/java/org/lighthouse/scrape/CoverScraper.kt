@@ -11,15 +11,15 @@ import java.net.URLEncoder
  *
  * Chosen over IGDB / TheGamesDB / SteamGridDB because it needs **no API key and
  * no account**: those all ship a secret in the APK, which is both a licensing
- * problem and something that breaks the day the key is revoked. Beacon chains
- * six sources; this is the one of the six a fork can actually use.
+ * problem and something that breaks the day the key is revoked. Of the sources
+ * worth having, this is the one an open project can actually ship.
  *
  *     https://thumbnails.libretro.com/<Platform>/Named_Boxarts/<Game>.png
  *
- * Our platform names already match libretro's directory names, because Beacon
- * used libretro-database naming and we inherited it through the import - so
- * there is no mapping table to maintain, only a normalised lookup for the few
- * that differ ("Sega Dreamcast" vs "Sega - Dreamcast").
+ * Our platform names already match libretro's directory names, because the
+ * catalogue follows libretro-database naming - so there is no mapping table to
+ * maintain, only a normalised lookup for the few that differ ("Sega Dreamcast"
+ * vs "Sega - Dreamcast").
  */
 object CoverScraper {
 
