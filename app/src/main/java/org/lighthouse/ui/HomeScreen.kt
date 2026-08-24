@@ -208,6 +208,10 @@ private fun SystemTabs(
     onPick: (Int) -> Unit,
 ) {
     val theme = LocalTheme.current
+    // Everything that marks SELECTION on this screen keys off theme.primary,
+    // never theme.textPrimary. Text resolves to near-white for every dark
+    // theme, so a highlight drawn from it looks identical in all of them - the
+    // home screen appeared not to be themed at all, while Settings clearly was.
     val tabState = androidx.compose.foundation.lazy.rememberLazyListState()
     // With 15 systems the row overflows; without this the selected tab can sit
     // off-screen or behind the R1 chip.
@@ -238,7 +242,7 @@ private fun SystemTabs(
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(20.dp))
-                        .background(if (on) theme.textPrimary.copy(alpha = 0.22f) else Color.Transparent)
+                        .background(if (on) theme.primary.copy(alpha = 0.28f) else Color.Transparent)
                         .clickable { onPick(i) }
                         .padding(horizontal = 16.dp, vertical = 7.dp)
                 ) {
@@ -263,7 +267,7 @@ private fun BumperChip(label: String, onClick: () -> Unit) {
         Modifier
             .size(34.dp)
             .clip(CircleShape)
-            .background(theme.textPrimary.copy(alpha = 0.92f))
+            .background(theme.primary)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -339,7 +343,7 @@ private fun CoverTile(
                 .clip(RoundedCornerShape(10.dp))
                 .background(theme.surfaceVariant)
                 .then(
-                    if (focused) Modifier.border(3.dp, theme.textPrimary, RoundedCornerShape(10.dp))
+                    if (focused) Modifier.border(3.dp, theme.primary, RoundedCornerShape(10.dp))
                     else Modifier
                 )
         ) {
@@ -550,7 +554,7 @@ private fun Hint(
             Modifier
                 .size(28.dp)
                 .clip(CircleShape)
-                .background(theme.textPrimary.copy(alpha = if (dim) 0.35f else 0.92f)),
+                .background(theme.primary.copy(alpha = if (dim) 0.38f else 1f)),
             contentAlignment = Alignment.Center,
         ) {
             Text(button, color = theme.background, fontSize = 12.sp, fontWeight = FontWeight.Bold)
