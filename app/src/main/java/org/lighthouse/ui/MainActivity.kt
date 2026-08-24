@@ -966,6 +966,8 @@ class MainActivity : ComponentActivity() {
             showSettings = false
             this@MainActivity.chooseFolder(platformId)
         }
+        override fun setEmulator(platformId: String, pkg: String) =
+            this@MainActivity.setEmulator(platformId, pkg)
         override fun chooseApps(platformId: String) {
             appPickerFor = platformId; showAppPicker = true
         }
@@ -1002,6 +1004,8 @@ class MainActivity : ComponentActivity() {
                 isAppShelf = pg.profile.source.provider ==
                     org.lighthouse.data.SourceSpec.INSTALLED_APPS,
                 aspectRatio = pg.profile.aspectRatio,
+                emulators = emulatorOptions(pg.profile),
+                currentEmulator = currentEmulatorLabel(pg.profile),
                 enabled = pg.profile.enabled,
                 problem = pg.problem,
             )
@@ -1315,6 +1319,80 @@ class MainActivity : ComponentActivity() {
         app.profiles.delete(id)
         reload()
         toast("Removed. Imported games and art are kept.")
+    }
+
+    /** The package a profile currently launches, if it names one. */
+    private fun launchPackage(p: PlatformProfile): String? =
+        p.launch.component?.substringBefore('/')?.takeIf { it.isNotBlank() }
+
+    private fun appLabel(pkg: String): String? = runCatching {
+        val pm = packageManager
+        pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+    }.getOrNull()
+
+    private fun currentEmulatorLabel(p: PlatformProfile): String? {
+        val pkg = launchPackage(p) ?: return null
+        val known = app.catalogue.load().systems.firstOrNull { it.id == p.id }
+            ?.emulators?.firstOrNull { it.`package` == pkg }?.name
+        val label = known ?: appLabel(pkg) ?: pkg
+        return if (appLabel(pkg) == null) "$label — not installed" else label
+    }
+
+    private fun emulatorOptions(p: PlatformProfile): List<EmulatorOption> {
+        val current = launchPackage(p)
+        val known = app.catalogue.load().systems.firstOrNull { it.id == p.id }?.emulators.orEmpty()
+        val options = known.map { e ->
+            EmulatorOption(
+                pkg = e.`package`,
+                name = e.name,
+                installed = appLabel(e.`package`) != null,
+                verified = e.verified,
+                inUse = e.`package` == current,
+            )
+        }.toMutableList()
+        // Whatever it is set to belongs on the list even when the catalogue has
+        // never heard of it - otherwise a hand-configured emulator looks unset.
+        if (current != null && options.none { it.pkg == current }) {
+            options += EmulatorOption(
+                pkg = current,
+                name = appLabel(current) ?: current,
+                installed = appLabel(current) != null,
+                verified = p.verified,
+                inUse = true,
+            )
+        }
+        return options.sortedWith(
+            compareByDescending<EmulatorOption> { it.inUse }
+                .thenByDescending { it.installed }
+                .thenByDescending { it.verified }
+                .thenBy { it.name.lowercase() }
+        )
+    }
+
+    /**
+     * Point a system at a different app.
+     *
+     * Takes the whole launch contract from the catalogue, not just the package:
+     * Dolphin needs an extra named AutoStartFile while X1-BOX wants the ROM as
+     * the data URI, so swapping only the package would produce a profile that
+     * launches the app and never passes the game.
+     */
+    private fun setEmulator(platformId: String, pkg: String) {
+        val profile = loadProfileById(platformId) ?: return
+        val sys = app.catalogue.load().systems.firstOrNull { it.id == platformId }
+        val emu = sys?.emulators?.firstOrNull { it.`package` == pkg }
+        val spec = emu?.launch
+            ?: profile.launch.copy(component = pkg)   // unknown app: keep the rest
+        val err = app.profiles.save(
+            profile.copy(launch = spec, verified = emu?.verified == true)
+        )
+        if (err != null) { toast(err); return }
+        reload()
+        menuBack()
+        toast(
+            if (emu?.verified == true) "Using ${emu.name}"
+            else "Using ${emu?.name ?: appLabel(pkg) ?: pkg} — test a game to confirm it works"
+        )
     }
 
     private fun addSystem(system: org.lighthouse.data.CatalogueSystem) {

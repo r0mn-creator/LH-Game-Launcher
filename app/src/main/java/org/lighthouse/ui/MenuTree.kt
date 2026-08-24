@@ -25,6 +25,7 @@ class MenuTree(
         fun scrapeCovers()
         fun chooseFolder(platformId: String)
         fun chooseApps(platformId: String)
+        fun setEmulator(platformId: String, pkg: String)
         fun editIntent(platformId: String)
         fun cycleAspect(platformId: String)
         fun setEnabled(platformId: String, enabled: Boolean)
@@ -41,6 +42,7 @@ class MenuTree(
         path[0] == "library" && path.size == 1 -> library()
         path[0] == "library" -> cleanup()
         path[0] == "consoles" && path.size == 1 -> consoles()
+        path[0] == "consoles" && path.size > 2 && path[2] == "emulator" -> emulators(path[1])
         path[0] == "consoles" -> platform(path[1])
         path[0] == "add" -> addSystem()
         path[0] == "themes" && path.size == 1 -> themes()
@@ -132,6 +134,38 @@ class MenuTree(
         )
     }
 
+    /** Pick the app that runs a system, without touching the intent editor. */
+    private fun emulators(id: String): MenuNode {
+        val p = state.platforms.firstOrNull { it.id == id }
+            ?: return MenuNode(id, "Emulator", items = listOf(MenuItem.Note("Not found.")))
+        return MenuNode(
+            id = "emulator",
+            title = "Emulator for ${p.name}",
+            subtitle = "Choosing one fills in a launch method known to work with it.",
+            items = buildList {
+                for (e in p.emulators) {
+                    add(MenuItem.Action(
+                        e.name,
+                        when {
+                            e.inUse && !e.installed -> "In use — but not installed"
+                            e.inUse -> "In use"
+                            !e.installed -> "Not installed"
+                            e.verified -> "Installed · launch confirmed on a device"
+                            else -> "Installed · launch untested"
+                        },
+                        enabled = e.installed && !e.inUse,
+                    ) { actions.setEmulator(id, e.pkg) })
+                }
+                if (p.emulators.none { it.installed }) {
+                    add(MenuItem.Note("None of these are installed. Install one, or " +
+                        "set the launch up by hand with Launch intent."))
+                }
+                add(MenuItem.Action("Set it up by hand",
+                    "Open the launch intent editor") { actions.editIntent(id) })
+            },
+        )
+    }
+
     private fun consoles() = MenuNode(
         id = "consoles", title = "Consoles",
         subtitle = "Open one to change its emulator, folder or artwork",
@@ -168,6 +202,8 @@ class MenuTree(
                         if (p.needsFolder) "No readable folder yet" else "${p.games} games found",
                     ) { actions.chooseFolder(id) })
                 }
+                add(MenuItem.Submenu("emulator", "Emulator",
+                    p.currentEmulator ?: "Not set — pick the app that runs this system"))
                 add(MenuItem.Action("Launch intent",
                     "How a game is handed to the emulator") { actions.editIntent(id) })
                 add(MenuItem.Choice("Box art shape",

@@ -56,6 +56,25 @@ data class PlatformRowState(
     /** installed_apps platform: a curated shelf rather than a scanned folder. */
     val isAppShelf: Boolean = false,
     val aspectRatio: String = "3:4",
+    /** Apps known to run this system, plus whatever it is set to now. */
+    val emulators: List<EmulatorOption> = emptyList(),
+    val currentEmulator: String? = null,
+)
+
+/**
+ * One app that can run a system.
+ *
+ * Listed whether or not it is installed: knowing that Dolphin is the app for
+ * GameCube is useful before you have it, and a list that hides everything you
+ * have not installed looks broken on a fresh device.
+ */
+data class EmulatorOption(
+    val pkg: String,
+    val name: String,
+    val installed: Boolean,
+    /** Its launch contract has been confirmed on a real device. */
+    val verified: Boolean,
+    val inUse: Boolean,
 )
 
 data class CatalogueRowState(
