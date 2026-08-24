@@ -217,6 +217,34 @@ class ColorThemeStore(private val context: Context) {
         }
     }
 
+    /**
+     * Copy a theme file the user picked into the themes folder.
+     *
+     * This exists because on Android 11+ the app's own files directory is not
+     * reachable from a file manager or over USB, so "drop a .theme file in"
+     * is advice a person cannot follow. The picker needs no storage
+     * permission and works on every Android version.
+     *
+     * @return the theme name on success, or null with a reason.
+     */
+    fun importFrom(name: String, text: String): Result<String> {
+        // Notepad appends .txt unless you pick "All Files", and Windows hides
+        // extensions, so "Sunset.theme" routinely arrives as "Sunset.theme.txt".
+        // Tolerate it rather than naming the theme after the mistake.
+        val clean = name.substringAfterLast('/')
+            .removeSuffix(".txt").removeSuffix(EXT).removeSuffix(".txt")
+            .replace(Regex("""[^A-Za-z0-9 ._-]"""), "_").trim()
+        if (clean.isEmpty()) return Result.failure(IllegalArgumentException("that file has no usable name"))
+        // Parse BEFORE writing: a file that cannot be read as a theme should be
+        // rejected at the moment the user picks it, not silently listed as a
+        // problem afterwards.
+        ColorThemes.parse(clean, text, null).onFailure { return Result.failure(it) }
+        if (!dir.exists() && !dir.mkdirs()) {
+            return Result.failure(IllegalStateException("could not create $dir"))
+        }
+        return runCatching { File(dir, clean + EXT).writeText(text); clean }
+    }
+
     data class Loaded(
         val themes: List<ColorTheme>,
         /** file name -> why it was rejected, or a readability warning. */

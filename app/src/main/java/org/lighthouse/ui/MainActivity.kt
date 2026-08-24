@@ -94,6 +94,37 @@ class MainActivity : ComponentActivity() {
      */
     private val prefs get() = getSharedPreferences("lighthouse_ui", MODE_PRIVATE)
 
+    /** Picks a .theme file. Any mime: ".theme" has no registered type. */
+    private val themePicker = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
+    ) { res ->
+        val uri = res.data?.data ?: return@registerForActivityResult
+        val name = queryDisplayName(uri) ?: "Imported"
+        val text = runCatching {
+            contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+        }.getOrNull()
+        if (text == null) { toast("Could not read that file"); return@registerForActivityResult }
+        app.colors.importFrom(name, text)
+            .onSuccess { toast("Added the \"" + it + "\" theme"); colorEpoch++; reload() }
+            .onFailure { toast("Not a theme file: " + (it.message ?: "could not be read")) }
+    }
+
+    private fun queryDisplayName(uri: android.net.Uri): String? = runCatching {
+        contentResolver.query(uri, null, null, null, null)?.use { c ->
+            val i = c.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (i >= 0 && c.moveToFirst()) c.getString(i) else null
+        }
+    }.getOrNull()
+
+    private fun importColorTheme() {
+        val i = android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(android.content.Intent.CATEGORY_OPENABLE)
+            type = "*/*"
+        }
+        runCatching { themePicker.launch(i) }
+            .onFailure { toast("No file picker available on this device") }
+    }
+
     private val folderPicker = registerForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()
     ) { result ->
@@ -209,7 +240,7 @@ class MainActivity : ComponentActivity() {
                             cursor = cursor.copy(index = 0)
                         },
                         onSettings = { showSettings = true },
-                        onApps = { toast("Apps screen is not built yet") },
+                        onApps = ::openDrawer,
                     )
                 }
                 busy?.let { BusyOverlay(it) }
@@ -713,6 +744,7 @@ class MainActivity : ComponentActivity() {
         override fun addSystem(system: org.lighthouse.data.CatalogueSystem) =
             this@MainActivity.addSystem(system)
         override fun pickColorTheme(name: String?) = this@MainActivity.pickColorTheme(name)
+        override fun importColorTheme() = this@MainActivity.importColorTheme()
         override fun openColorFolder() {
             toast("Colour themes live in " + app.colors.dir.absolutePath)
         }

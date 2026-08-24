@@ -28,6 +28,7 @@ class MenuTree(
         fun remove(platformId: String)
         fun addSystem(system: CatalogueSystem)
         fun pickColorTheme(name: String?)
+        fun importColorTheme()
         fun openColorFolder()
     }
 
@@ -223,7 +224,11 @@ class MenuTree(
                     actions.pickColorTheme(name)
                 })
             }
-            add(MenuItem.Action("Where these live", "Add your own by dropping a .theme file in") {
+            add(MenuItem.Action("Add a theme from a file",
+                "Pick a .theme file you wrote - Downloads, a USB stick, anywhere") {
+                actions.importColorTheme()
+            })
+            add(MenuItem.Action("Where these live", "Folder path, for adb or a rooted file manager") {
                 actions.openColorFolder()
             })
             state.colorProblems.forEach { (f, why) ->
