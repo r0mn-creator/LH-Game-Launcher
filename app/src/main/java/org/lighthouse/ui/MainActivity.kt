@@ -93,6 +93,12 @@ class MainActivity : ComponentActivity() {
     /** Open text prompt: title, hint, current value, and what to do with it. */
     private var prompt by mutableStateOf<Triple<String, String?, String>?>(null)
     private var promptApply: ((String) -> Unit)? = null
+    /** The on-screen keyboard's own state - this app draws its own, see OnScreenKeyboard.kt. */
+    private var promptText by mutableStateOf("")
+    private var promptSymbols by mutableStateOf(false)
+    private var promptShift by mutableStateOf(false)
+    private var kbRow by mutableStateOf(0)
+    private var kbCol by mutableStateOf(0)
     private var editingPickPackage by mutableStateOf(false)
     private var pkgCursor by mutableIntStateOf(0)
     /**
@@ -289,10 +295,14 @@ class MainActivity : ComponentActivity() {
                 // edited from Settings, the launch intent's fields from the
                 // editor, and a theme rename from Settings too - one overlay,
                 // triggered from wherever a plain string needs typing.
-                prompt?.let { (t, h, v) ->
-                    TextPromptOverlay(t, h, v,
-                        onDone = { promptApply?.invoke(it); prompt = null },
-                        onCancel = { prompt = null })
+                prompt?.let { (t, h, _) ->
+                    TextPromptOverlay(
+                        title = t, hint = h, text = promptText,
+                        symbols = promptSymbols, shift = promptShift,
+                        cursorRow = kbRow, cursorCol = kbCol,
+                        onKeyTap = { r, c -> kbRow = r; kbCol = c; pressKey() },
+                        onCancel = { prompt = null },
+                    )
                 }
                 contextMenuFor?.let { (_, g) ->
                     GameContextMenu(
@@ -446,7 +456,19 @@ class MainActivity : ComponentActivity() {
                 cursor = cursor.copy(index = 0)
             }
             Nav.LEFT, Nav.RIGHT, Nav.UP, Nav.DOWN -> when {
-                prompt != null -> Unit          // the keyboard owns the d-pad
+                prompt != null -> {
+                    val rows = keyboardRows(promptSymbols)
+                    kbRow = kbRow.coerceIn(0, rows.size - 1)
+                    when (nav) {
+                        Nav.UP, Nav.DOWN -> {
+                            kbRow = (kbRow + if (nav == Nav.DOWN) 1 else -1).coerceIn(0, rows.size - 1)
+                            kbCol = kbCol.coerceIn(0, rows[kbRow].size - 1)
+                        }
+                        Nav.LEFT -> kbCol = (kbCol - 1).coerceAtLeast(0)
+                        Nav.RIGHT -> kbCol = (kbCol + 1).coerceAtMost(rows[kbRow].size - 1)
+                        else -> Unit
+                    }
+                }
                 contextMenuFor != null -> {
                     val n = if (contextMenuConfirming) 2 else contextMenuItems(contextMenuFor!!.second).size
                     if (n > 0) contextMenuCursor = when (nav) {
@@ -491,7 +513,7 @@ class MainActivity : ComponentActivity() {
                 else -> cursor = cursor.move(nav, page?.games?.size ?: 0)
             }
             Nav.LAUNCH -> if (prompt != null) {
-                Unit
+                pressKey()
             } else if (contextMenuFor != null) {
                 val (pg, g) = contextMenuFor!!
                 if (contextMenuConfirming) {
@@ -565,7 +587,20 @@ class MainActivity : ComponentActivity() {
                 menuPath = emptyList(); menuForward = true
                 pane = Pane.RAIL; categoryIndex = 0; showSettings = true
             }
-            Nav.SEARCH -> toast("Search is not built yet")
+            // X doubles as "open this game's menu" - the pad equivalent of
+            // holding a tile down - since Search has nowhere else to live yet
+            // and a pad has no touchscreen to hold.
+            Nav.SEARCH -> {
+                val g = page?.games?.getOrNull(cursor.index)
+                if (page != null && g != null && prompt == null && contextMenuFor == null &&
+                    artPickerFor == null && !editingPickPackage && editingId == null &&
+                    onboardStep == null && !showAppPicker && !showDrawer && !showSettings
+                ) {
+                    contextMenuFor = page to g
+                } else {
+                    toast("Search is not built yet")
+                }
+            }
         }
     }
 
@@ -1323,9 +1358,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Presses whatever key the on-screen keyboard's cursor is currently on. */
+    private fun pressKey() {
+        val key = keyboardRows(promptSymbols).getOrNull(kbRow)?.getOrNull(kbCol) ?: return
+        when (key) {
+            Key.Shift -> promptShift = !promptShift
+            // Cursor resets rather than trying to carry a position across two
+            // different-shaped layouts, which would as often land on the
+            // wrong key as the right one.
+            Key.Symbols -> { promptSymbols = !promptSymbols; kbRow = 0; kbCol = 0 }
+            Key.Done -> { promptApply?.invoke(promptText.trim()); prompt = null }
+            else -> promptText = applyKey(key, promptText, promptShift)
+        }
+    }
+
     private fun askText(title: String, hint: String?, current: String, apply: (String) -> Unit) {
         promptApply = apply
         prompt = Triple(title, hint, current)
+        promptText = current
+        promptSymbols = false
+        promptShift = false
+        kbRow = 0
+        kbCol = 0
     }
 
     private fun intentNode(id: String, spec: org.lighthouse.data.LaunchSpec): MenuNode {

@@ -108,7 +108,7 @@ fun HomeScreen(
     onSelect: (Int) -> Unit,
     onPrevSystem: () -> Unit,
     onNextSystem: () -> Unit,
-    /** Held down on a tile - opens that game's own menu (rename, art, remove). */
+    /** Held down on a tile, or X on a pad - opens that game's own menu (rename, art, remove). */
     onLongPress: (SystemPage, DisplayGame) -> Unit = { _, _ -> },
     /** Background work, shown quietly rather than blocking the screen. */
     artStatus: String? = null,
@@ -190,6 +190,7 @@ fun HomeScreen(
                 onApps = onApps,
                 onSettings = onSettings,
                 onPlay = { if (page != null && selected != null) onLaunch(page, selected) },
+                onMenu = { if (page != null && selected != null) onLongPress(page, selected) },
                 artStatus = artStatus,
             )
         }
@@ -538,6 +539,7 @@ private fun BottomBar(
     onApps: () -> Unit,
     onSettings: () -> Unit,
     onPlay: () -> Unit,
+    onMenu: () -> Unit,
     artStatus: String? = null,
 ) {
     val theme = LocalTheme.current
@@ -565,6 +567,11 @@ private fun BottomBar(
             Text(it, color = theme.textSecondary, fontSize = 13.sp)
             Spacer(Modifier.width(22.dp))
         }
+
+        // Rename, art, remove - the same menu a held-down tile opens, reachable
+        // here for a pad with no touchscreen to hold.
+        Hint("X", "Menu", dim = selected == null, onClick = onMenu)
+        Spacer(Modifier.width(22.dp))
 
         // Says what A will actually do, including when it cannot do it.
         val label = when {

@@ -11,17 +11,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -29,81 +24,90 @@ import androidx.compose.ui.unit.sp
 import org.lighthouse.theme.LocalTheme
 
 /**
- * Typing on a handheld.
+ * Typing on a handheld, from a controller.
  *
- * A pad cannot enter free text, so the few fields that need it open this and
- * let the on-screen keyboard do the work. Keeping text entry in one overlay is
- * what allows every other screen to stay pad-only.
+ * The system IME is a touch keyboard - nothing in it answers to a d-pad - so
+ * relying on it for these few fields would have been the one place the "works
+ * from the sofa, docked to a TV" promise broke. The keyboard here is drawn by
+ * us and driven by the same explicit cursor every other screen uses, docked to
+ * the bottom of the panel with the field it is filling anchored directly above
+ * it, rather than a text box floating somewhere else on screen with the
+ * keyboard appearing separately below.
  */
 @Composable
 fun TextPromptOverlay(
     title: String,
     hint: String?,
-    initial: String,
-    onDone: (String) -> Unit,
+    text: String,
+    symbols: Boolean,
+    shift: Boolean,
+    cursorRow: Int,
+    cursorCol: Int,
+    onKeyTap: (row: Int, col: Int) -> Unit,
     onCancel: () -> Unit,
 ) {
     val theme = LocalTheme.current
-    var value by remember(initial) { mutableStateOf(initial) }
-    val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
     Box(
         Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = 0.72f)),
-        contentAlignment = Alignment.Center,
     ) {
+        // Anchored to the bottom, not centred: this is meant to read as a
+        // keyboard panel sliding up from the edge of the screen, the same
+        // shape a console's own on-screen keyboard takes, with the field it
+        // fills pushed up to sit right above the keys as they appear.
         Column(
             Modifier
-                .fillMaxWidth(0.7f)
-                .clip(RoundedCornerShape(14.dp))
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
                 .background(theme.surface)
-                .padding(24.dp)
         ) {
-            Text(title, color = theme.textPrimary, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            hint?.let {
-                Spacer(Modifier.height(6.dp))
-                Text(it, color = theme.textSecondary, fontSize = 12.sp)
+            Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 6.dp)) {
+                Text(title, color = theme.textPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                hint?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text(it, color = theme.textSecondary, fontSize = 12.sp)
+                }
+                Spacer(Modifier.height(10.dp))
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(theme.surfaceVariant)
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                ) {
+                    Text(
+                        text.ifEmpty { " " },
+                        color = theme.textPrimary, fontSize = 16.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.weight(1f),
+                    )
+                    // A static caret rather than a blinking one: this is not a
+                    // real text field with IME focus, and pretending it is
+                    // would invite tapping it expecting the system keyboard.
+                    Text("│", color = theme.primary, fontSize = 16.sp, fontFamily = FontFamily.Monospace)
+                }
             }
-            Spacer(Modifier.height(14.dp))
-            BasicTextField(
-                value = value,
-                onValueChange = { value = it },
-                singleLine = true,
-                textStyle = TextStyle(color = theme.textPrimary, fontSize = 16.sp,
-                    fontFamily = FontFamily.Monospace),
-                cursorBrush = SolidColor(theme.primary),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(focus)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(theme.surfaceVariant)
-                    .padding(horizontal = 12.dp, vertical = 12.dp),
+            KeyboardPanel(
+                symbols = symbols,
+                shift = shift,
+                cursorRow = cursorRow,
+                cursorCol = cursorCol,
+                onTap = onKeyTap,
             )
-            Spacer(Modifier.height(18.dp))
-            Row {
-                PromptButton("Save") { onDone(value.trim()) }
-                Spacer(Modifier.width(12.dp))
-                PromptButton("Clear") { value = "" }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Color.Black.copy(alpha = 0.25f))
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+            ) {
+                PadHint("B", "Cancel", onCancel)
                 Spacer(Modifier.weight(1f))
-                PromptButton("Cancel", onCancel)
+                Text("D-pad to move · A to press a key", color = theme.textSecondary, fontSize = 12.sp)
             }
         }
-    }
-}
-
-@Composable
-private fun PromptButton(label: String, onClick: () -> Unit) {
-    val theme = LocalTheme.current
-    Box(
-        Modifier
-            .clip(RoundedCornerShape(8.dp))
-            .border(1.dp, theme.primary.copy(alpha = 0.6f), RoundedCornerShape(8.dp))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-    ) {
-        Text(label, color = theme.primary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
     }
 }
 
