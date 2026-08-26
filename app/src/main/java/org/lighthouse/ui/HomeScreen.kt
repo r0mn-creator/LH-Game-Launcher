@@ -8,7 +8,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
@@ -106,6 +108,8 @@ fun HomeScreen(
     onSelect: (Int) -> Unit,
     onPrevSystem: () -> Unit,
     onNextSystem: () -> Unit,
+    /** Held down on a tile - opens that game's own menu (rename, art, remove). */
+    onLongPress: (SystemPage, DisplayGame) -> Unit = { _, _ -> },
     /** Background work, shown quietly rather than blocking the screen. */
     artStatus: String? = null,
     onPickSystem: (Int) -> Unit,
@@ -160,6 +164,7 @@ fun HomeScreen(
                             page, cursor, perTileBadges = anyPlayable,
                             onSelect = onSelect,
                             onLaunch = { g -> onLaunch(page, g) },
+                            onLongPress = { g -> onLongPress(page, g) },
                         )
                     }
                 }
@@ -298,6 +303,7 @@ private fun CoverGrid(
     perTileBadges: Boolean,
     onSelect: (Int) -> Unit,
     onLaunch: (DisplayGame) -> Unit,
+    onLongPress: (DisplayGame) -> Unit = {},
 ) {
     val state = rememberLazyGridState()
 
@@ -321,8 +327,11 @@ private fun CoverGrid(
     ) {
         val aspect = aspectOf(page.profile.aspectRatio)
         itemsIndexed(page.games) { i, g ->
-            CoverTile(g, focused = i == cursor.index, showBadge = perTileBadges,
-                aspect = aspect) {
+            CoverTile(
+                g, focused = i == cursor.index, showBadge = perTileBadges,
+                aspect = aspect,
+                onLongPress = { onLongPress(g) },
+            ) {
                 // First tap selects, a second tap on the selected tile plays.
                 // A single tap launching makes a mis-tap boot a game, and it
                 // leaves touch users with no way to build the selection that
@@ -334,11 +343,13 @@ private fun CoverGrid(
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun CoverTile(
     game: DisplayGame,
     focused: Boolean,
     showBadge: Boolean,
     aspect: Float,
+    onLongPress: () -> Unit = {},
     onLaunch: () -> Unit,
 ) {
     val theme = LocalTheme.current
@@ -350,7 +361,11 @@ private fun CoverTile(
     Column(
         Modifier
             .scale(scale)
-            .clickable(onClick = onLaunch)
+            // combinedClickable rather than plain clickable: this is the one
+            // spot that needs a hold gesture, for a game's own menu (rename,
+            // pick different art, remove) - the same touch pattern most
+            // console-style launchers use, without giving up the tap ripple.
+            .combinedClickable(onClick = onLaunch, onLongClick = onLongPress)
     ) {
         Box(
             Modifier

@@ -37,6 +37,12 @@ data class GameRecord(
     @SerialName("release_date") val releaseDate: Long? = null,
     val favourite: Boolean = false,
     @SerialName("last_played") val lastPlayed: Long? = null,
+    /**
+     * Removed from the shelf by the user, via a scanned game's own context
+     * menu. Never deletes the ROM: the file stays exactly where it is, so
+     * un-hiding is always possible by editing this one field back.
+     */
+    val hidden: Boolean = false,
 ) {
     /**
      * Filename without extension or bracketed region tags, lowercased.

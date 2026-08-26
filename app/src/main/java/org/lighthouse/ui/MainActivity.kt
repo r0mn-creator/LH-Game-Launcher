@@ -63,6 +63,15 @@ class MainActivity : ComponentActivity() {
     /** Which shelf the app picker is editing. Android and Windows are both
      *  curated from installed apps, so "the app shelf" is no longer unique. */
     private var appPickerFor by mutableStateOf<String?>(null)
+    /** Held down on a tile: that game's own menu is open. */
+    private var contextMenuFor by mutableStateOf<Pair<SystemPage, DisplayGame>?>(null)
+    private var contextMenuCursor by mutableStateOf(0)
+    /** True once "Remove game" has been picked but not yet confirmed. */
+    private var contextMenuConfirming by mutableStateOf(false)
+    private var artPickerFor by mutableStateOf<Pair<SystemPage, DisplayGame>?>(null)
+    private var artCandidates by mutableStateOf<List<org.lighthouse.scrape.CoverScraper.ArtCandidate>>(emptyList())
+    private var artPickerLoading by mutableStateOf(false)
+    private var artPickerCursor by mutableStateOf(0)
     /** Non-null while first-run setup is on screen. */
     private var onboardStep by mutableStateOf<Step?>(null)
     private var onboardCursor by mutableStateOf(0)
@@ -199,22 +208,26 @@ class MainActivity : ComponentActivity() {
                     )
                 } else if (ed != null && editingSpec != null) {
                     val node = intentNode(ed, editingSpec!!)
-                    Box(Modifier.fillMaxSize()) {
-                        ConsoleMenuScreen(
-                            node = node,
-                            cursor = clampEditorCursor(node),
-                            forward = true,
-                            depth = 1,
-                            onSelect = { editorCursor = it },
-                            onActivate = { i -> activate(node, i) },
-                            onBack = { editingId = null; editingSpec = null },
-                        )
-                        prompt?.let { (t, h, v) ->
-                            TextPromptOverlay(t, h, v,
-                                onDone = { promptApply?.invoke(it); prompt = null },
-                                onCancel = { prompt = null })
-                        }
-                    }
+                    ConsoleMenuScreen(
+                        node = node,
+                        cursor = clampEditorCursor(node),
+                        forward = true,
+                        depth = 1,
+                        onSelect = { editorCursor = it },
+                        onActivate = { i -> activate(node, i) },
+                        onBack = { editingId = null; editingSpec = null },
+                    )
+                } else if (artPickerFor != null) {
+                    val (pg, g) = artPickerFor!!
+                    ArtPickerScreen(
+                        title = g.title,
+                        candidates = artCandidates,
+                        loading = artPickerLoading,
+                        cursor = artPickerCursor.coerceIn(0, (artCandidates.size - 1).coerceAtLeast(0)),
+                        onSelect = { artPickerCursor = it },
+                        onPick = { i -> artCandidates.getOrNull(i)?.let { applyArtCandidate(pg, g, it) } },
+                        onBack = { artPickerFor = null },
+                    )
                 } else if (showAppPicker) {
                     val rows = appPickerRows()
                     AppPickerScreen(
@@ -268,7 +281,28 @@ class MainActivity : ComponentActivity() {
                         },
                         onSettings = { showSettings = true },
                         onApps = ::openDrawer,
+                        onLongPress = { pg, g -> contextMenuFor = pg to g },
                         artStatus = artStatus,
+                    )
+                }
+                // Global, not scoped to any one screen: the SteamGridDB key is
+                // edited from Settings, the launch intent's fields from the
+                // editor, and a theme rename from Settings too - one overlay,
+                // triggered from wherever a plain string needs typing.
+                prompt?.let { (t, h, v) ->
+                    TextPromptOverlay(t, h, v,
+                        onDone = { promptApply?.invoke(it); prompt = null },
+                        onCancel = { prompt = null })
+                }
+                contextMenuFor?.let { (_, g) ->
+                    GameContextMenu(
+                        title = g.title,
+                        items = contextMenuItems(g),
+                        confirming = contextMenuConfirming,
+                        cursor = contextMenuCursor,
+                        onSelect = { contextMenuCursor = it },
+                        onActivate = { handle(Nav.LAUNCH) },
+                        onDismiss = { contextMenuFor = null; contextMenuConfirming = false },
                     )
                 }
                 busy?.let { BusyOverlay(it) }
@@ -393,6 +427,13 @@ class MainActivity : ComponentActivity() {
         return super.onGenericMotionEvent(event)
     }
 
+    /** Rows a game's own menu currently shows - depends on whether it can have art at all. */
+    private fun contextMenuItems(g: DisplayGame): List<Pair<String, Boolean>> = buildList {
+        add("Edit name" to false)
+        if (g.entry != null || g.record != null) add("Edit box art" to false)
+        add("Remove game" to true)
+    }
+
     private fun handle(nav: Nav) {
         val page = pages.getOrNull(systemIndex)
         when (nav) {
@@ -406,6 +447,18 @@ class MainActivity : ComponentActivity() {
             }
             Nav.LEFT, Nav.RIGHT, Nav.UP, Nav.DOWN -> when {
                 prompt != null -> Unit          // the keyboard owns the d-pad
+                contextMenuFor != null -> {
+                    val n = if (contextMenuConfirming) 2 else contextMenuItems(contextMenuFor!!.second).size
+                    if (n > 0) contextMenuCursor = when (nav) {
+                        Nav.UP, Nav.LEFT -> (contextMenuCursor - 1).coerceAtLeast(0)
+                        Nav.DOWN, Nav.RIGHT -> (contextMenuCursor + 1).coerceAtMost(n - 1)
+                        else -> contextMenuCursor
+                    }
+                }
+                artPickerFor != null -> {
+                    val n = artCandidates.size
+                    if (n > 0) artPickerCursor = GridCursor(artPickerCursor, 4).move(nav, n).index
+                }
                 editingPickPackage -> {
                     val n = packageNode().items.size
                     if (n > 0) pkgCursor = when (nav) {
@@ -439,6 +492,28 @@ class MainActivity : ComponentActivity() {
             }
             Nav.LAUNCH -> if (prompt != null) {
                 Unit
+            } else if (contextMenuFor != null) {
+                val (pg, g) = contextMenuFor!!
+                if (contextMenuConfirming) {
+                    // Cursor defaults to Cancel (index 1) when this step opens,
+                    // so a stray extra press on the same button that opened the
+                    // menu cannot also be the press that deletes something.
+                    if (contextMenuCursor == 0) { contextMenuFor = null; hideGame(pg, g) }
+                    contextMenuConfirming = false
+                    contextMenuCursor = 0
+                } else {
+                    when (contextMenuItems(g).getOrNull(contextMenuCursor)?.first) {
+                        "Edit name" -> {
+                            contextMenuFor = null
+                            askText("Edit name", null, g.title) { renameGame(pg, g, it) }
+                        }
+                        "Edit box art" -> { contextMenuFor = null; openArtPicker(pg, g) }
+                        "Remove game" -> { contextMenuConfirming = true; contextMenuCursor = 1 }
+                    }
+                }
+            } else if (artPickerFor != null) {
+                val (pg, g) = artPickerFor!!
+                artCandidates.getOrNull(artPickerCursor)?.let { applyArtCandidate(pg, g, it) }
             } else if (editingPickPackage) {
                 val n = packageNode()
                 activate(n, pkgCursor.coerceIn(0, (n.items.size - 1).coerceAtLeast(0)))
@@ -469,6 +544,12 @@ class MainActivity : ComponentActivity() {
             Nav.BACK -> when {
                 prompt != null -> prompt = null
                 verifyFor != null -> Unit          // must be answered
+                contextMenuFor != null -> if (contextMenuConfirming) {
+                    contextMenuConfirming = false; contextMenuCursor = 0
+                } else {
+                    contextMenuFor = null
+                }
+                artPickerFor != null -> artPickerFor = null
                 editingPickPackage -> editingPickPackage = false
                 editingId != null -> { editingId = null; editingSpec = null }
                 showAppPicker -> { showAppPicker = false; appPickerFor = null; reload() }
@@ -680,7 +761,9 @@ class MainActivity : ComponentActivity() {
 
                     artStatus = "Box art: ${page.profile.shortName}…"
                     val report = withContext(Dispatchers.IO) {
-                        org.lighthouse.scrape.CoverScraper.scrape(targets, app.library.mediaDir) { step ->
+                        org.lighthouse.scrape.CoverScraper.scrape(
+                            targets, app.library.mediaDir, app.config.steamGridDbKey,
+                        ) { step ->
                             // Short form only: this sits in the hint bar beside
                             // Play, not in a dialog with room to explain.
                             runOnUiThread {
@@ -742,6 +825,11 @@ class MainActivity : ComponentActivity() {
      * manual action clears that memory and re-queues everything.
      */
     private fun scrapeCovers() {
+        val cfg = app.config
+        if (cfg.steamGridDbReplaceAll && !cfg.steamGridDbKey.isNullOrBlank()) {
+            replaceAllArtFromSteamGridDb(cfg.steamGridDbKey!!)
+            return
+        }
         runCatching { artMissFile.delete() }
         val before = artQueue.size
         queueArtForAll()
@@ -750,6 +838,135 @@ class MainActivity : ComponentActivity() {
             else "Fetching box art in the background" +
                 (artQueue.size - before).let { if (it > 0) " — ${artQueue.size} system(s)" else "" }
         )
+    }
+
+    /**
+     * Every game, refetched from SteamGridDB, overwriting whatever cover it
+     * already has. Run as a blocking, visible pass rather than the quiet
+     * background queue: it is a deliberate rewrite of the whole shelf, not a
+     * gap-fill, and letting it interleave with the background worker risks
+     * doubling up on the same SteamGridDB rate limit.
+     */
+    private fun replaceAllArtFromSteamGridDb(key: String) {
+        if (busy != null) return
+        val targets = pages.flatMap { pg ->
+            pg.games.filter { it.entry != null || it.record != null }.map { g ->
+                org.lighthouse.scrape.CoverScraper.Target(
+                    key = g.record?.key ?: g.entry?.key ?: g.title,
+                    platformId = pg.profile.id,
+                    platformName = pg.profile.name,
+                    title = g.title,
+                )
+            }
+        }
+        if (targets.isEmpty()) { toast("No games to fetch art for"); return }
+
+        busy = "Replacing box art with SteamGridDB…"
+        lifecycleScope.launch {
+            val report = withContext(Dispatchers.IO) {
+                org.lighthouse.scrape.CoverScraper.scrape(
+                    targets, app.library.mediaDir, key, preferSteamGridDb = true,
+                ) { step -> runOnUiThread { busy = step } }
+            }
+            applyArt(report, targets)
+            busy = null
+            toast(report.summary() + report.notes.firstOrNull()?.let { " — $it" }.orEmpty())
+        }
+    }
+
+    /**
+     * Text-entry for a single config value, reusing the same overlay the
+     * launch-intent editor uses - keeping text entry in one place is what lets
+     * every pad-driven screen in the app stay pad-driven.
+     */
+    // ---- a game's own menu (long-press) --------------------------------------
+
+    private fun keyFor(g: DisplayGame): String = g.record?.key ?: g.entry?.key ?: g.title
+
+    /** The record to edit, creating a minimal one for a scanned game that has
+     *  never had a record before - the same pattern the scraper already uses. */
+    private fun recordFor(pg: SystemPage, g: DisplayGame): org.lighthouse.data.GameRecord =
+        g.record ?: org.lighthouse.data.GameRecord(
+            key = keyFor(g),
+            platformId = pg.profile.id,
+            title = g.title,
+            uri = g.entry?.uri?.toString(),
+        )
+
+    private fun renameGame(pg: SystemPage, g: DisplayGame, newTitle: String) {
+        val title = newTitle.trim()
+        if (title.isEmpty() || title == g.title) return
+        app.library.put(listOf(recordFor(pg, g).copy(title = title)))
+        reload()
+        toast("Renamed to \"$title\"")
+    }
+
+    /**
+     * Hides a game from the shelf without touching its file.
+     *
+     * A plain delete of the record would not stick for a scanned game: the
+     * next rescan rebuilds a record-less DisplayGame straight from the file on
+     * disk regardless. Marking it hidden is the only removal that survives a
+     * rescan, which is why LibraryMerge filters on this flag rather than on
+     * whether a record exists at all.
+     */
+    private fun hideGame(pg: SystemPage, g: DisplayGame) {
+        app.library.put(listOf(recordFor(pg, g).copy(hidden = true)))
+        reload()
+        toast("Removed \"${g.title}\" from the shelf")
+    }
+
+    private fun openArtPicker(pg: SystemPage, g: DisplayGame) {
+        artPickerFor = pg to g
+        artPickerLoading = true
+        artCandidates = emptyList()
+        artPickerCursor = 0
+        lifecycleScope.launch {
+            val list = withContext(Dispatchers.IO) {
+                org.lighthouse.scrape.CoverScraper.candidates(
+                    g.title, pg.profile.name, app.config.steamGridDbKey,
+                )
+            }
+            // The picker may have been dismissed while the search was in
+            // flight; do not resurrect it with a stale game's results.
+            if (artPickerFor?.second?.title == g.title) {
+                artCandidates = list
+                artPickerLoading = false
+            }
+        }
+    }
+
+    private fun applyArtCandidate(
+        pg: SystemPage,
+        g: DisplayGame,
+        candidate: org.lighthouse.scrape.CoverScraper.ArtCandidate,
+    ) {
+        lifecycleScope.launch {
+            busy = "Downloading cover…"
+            val file = withContext(Dispatchers.IO) {
+                org.lighthouse.scrape.CoverScraper.applyCandidate(
+                    candidate, pg.profile.id, g.title, app.library.mediaDir,
+                )
+            }
+            busy = null
+            if (file == null) { toast("Could not download that image"); return@launch }
+            app.library.put(listOf(recordFor(pg, g).copy(coverPath = file.absolutePath)))
+            artPickerFor = null
+            reload()
+            toast("Cover updated")
+        }
+    }
+
+    private fun editSteamGridDbKey() {
+        askText(
+            "SteamGridDB key",
+            "Paste the key from steamgriddb.com › Preferences › API. Leave empty to remove it.",
+            app.config.steamGridDbKey ?: "",
+        ) { v ->
+            app.config.steamGridDbKey = v
+            reload()
+            toast(if (v.isBlank()) "SteamGridDB key removed" else "SteamGridDB key saved")
+        }
     }
 
     // ---- first-run setup ----------------------------------------------------
@@ -962,6 +1179,11 @@ class MainActivity : ComponentActivity() {
         override fun rescan() { reload(); toast("Rescanning…") }
         override fun cleanupLibrary() = this@MainActivity.cleanupLibrary()
         override fun scrapeCovers() = this@MainActivity.scrapeCovers()
+        override fun editSteamGridDbKey() = this@MainActivity.editSteamGridDbKey()
+        override fun setSteamGridDbReplaceAll(v: Boolean) {
+            app.config.steamGridDbReplaceAll = v
+            reload()
+        }
         override fun chooseFolder(platformId: String) {
             showSettings = false
             this@MainActivity.chooseFolder(platformId)
@@ -1035,6 +1257,8 @@ class MainActivity : ComponentActivity() {
             missingArt = pages.sumOf { pg ->
                 pg.games.count { it.coverPath == null && (it.entry != null || it.record != null) }
             },
+            steamGridDbKey = app.config.steamGridDbKey,
+            steamGridDbReplaceAll = app.config.steamGridDbReplaceAll,
         )
     }
 

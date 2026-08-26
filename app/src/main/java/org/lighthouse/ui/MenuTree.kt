@@ -23,6 +23,8 @@ class MenuTree(
         fun rescan()
         fun cleanupLibrary()
         fun scrapeCovers()
+        fun editSteamGridDbKey()
+        fun setSteamGridDbReplaceAll(v: Boolean)
         fun chooseFolder(platformId: String)
         fun chooseApps(platformId: String)
         fun setEmulator(platformId: String, pkg: String)
@@ -95,10 +97,37 @@ class MenuTree(
                 "Walks every system that still needs access") { actions.setupFolders() },
             MenuItem.Action("Rescan now",
                 "Re-read every folder") { actions.rescan() },
-            MenuItem.Action("Get missing box art",
-                if (state.missingArt == 0) "Every game already has a cover"
-                else "${state.missingArt} game(s) have none · fetches from libretro",
-                enabled = state.missingArt > 0) { actions.scrapeCovers() },
+            MenuItem.Action(
+                if (state.steamGridDbReplaceAll) "Replace all box art"
+                else "Get missing box art",
+                when {
+                    state.steamGridDbReplaceAll && state.steamGridDbKey == null ->
+                        "Add a SteamGridDB key below first"
+                    state.steamGridDbReplaceAll ->
+                        "Re-fetches every cover from SteamGridDB, even ones you already have"
+                    state.missingArt == 0 -> "Every game already has a cover"
+                    state.steamGridDbKey != null ->
+                        "${state.missingArt} game(s) have none · tries libretro, then SteamGridDB"
+                    else -> "${state.missingArt} game(s) have none · fetches from libretro"
+                },
+                enabled = state.missingArt > 0 ||
+                    (state.steamGridDbReplaceAll && state.steamGridDbKey != null),
+            ) { actions.scrapeCovers() },
+            MenuItem.Action("SteamGridDB key",
+                if (state.steamGridDbKey != null)
+                    "Set · used for systems libretro has little art for, like Xbox 360"
+                else "Not set · needed for newer systems - Xbox 360, PS3, Switch") {
+                actions.editSteamGridDbKey()
+            },
+            MenuItem.Toggle(
+                "Replace all art with SteamGridDB",
+                "For one consistent look, instead of only filling in what libretro misses",
+                enabled = state.steamGridDbKey != null,
+                on = state.steamGridDbReplaceAll,
+            ) { actions.setSteamGridDbReplaceAll(it) },
+            MenuItem.Note("Free at steamgriddb.com - sign in, then Preferences › API › " +
+                "Generate API key. Only used as a fallback, and only for the titles " +
+                "libretro has nothing for, unless \"Replace all\" above is on."),
             MenuItem.Submenu("cleanup", "Forget missing games",
                 if (state.cleanupPlan.total == 0)
                     "Nothing to forget — every record has a game"

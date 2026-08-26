@@ -61,7 +61,10 @@ object LibraryMerge {
             out += DisplayGame(r.title, r.platformId, null, r)
         }
 
-        return out.sortedWith(
+        // A hidden game keeps its record and its file untouched - only the
+        // shelf stops showing it - so removing one is always reversible by
+        // clearing this field, never by re-scanning or re-importing.
+        return out.filterNot { it.record?.hidden == true }.sortedWith(
             compareByDescending<DisplayGame> { it.favourite }
                 .thenBy { it.title.lowercase() }
         )

@@ -20,6 +20,9 @@ data class SettingsState(
     val problems: Map<String, String>,
     val cleanupPlan: CleanupPlan,
     val missingArt: Int,
+    /** The user's own key, or null if they have not added one. */
+    val steamGridDbKey: String? = null,
+    val steamGridDbReplaceAll: Boolean = false,
 )
 
 /**

@@ -69,9 +69,35 @@ class LauncherConfig(private val context: Context) {
         get() = get(KEY_SETUP) == "true"
         set(v) { set(KEY_SETUP, if (v) "true" else null) }
 
+    /**
+     * The user's own SteamGridDB key, or null if they have not added one.
+     *
+     * Optional and used only as a fallback once libretro has already been
+     * tried: libretro needs no account at all, but it has almost no coverage
+     * past the sixth console generation. Storing the key here rather than
+     * shipping one in the APK keeps the redistribution decision - and the
+     * rate limit - with the person who owns the account, not with the app.
+     */
+    var steamGridDbKey: String?
+        get() = get(KEY_SGDB_KEY)
+        set(v) { set(KEY_SGDB_KEY, v?.trim()?.takeIf { it.isNotEmpty() }) }
+
+    /**
+     * When on, "Get missing box art" stops filling gaps and instead replaces
+     * EVERY cover with a SteamGridDB one, for a consistent art style across the
+     * whole shelf instead of a mix of scan styles. Only takes effect with a key
+     * set, and only on that explicit action - the quiet background fetch never
+     * touches art that already exists.
+     */
+    var steamGridDbReplaceAll: Boolean
+        get() = get(KEY_SGDB_REPLACE_ALL) == "true"
+        set(v) { set(KEY_SGDB_REPLACE_ALL, if (v) "true" else null) }
+
     companion object {
         const val KEY_SETUP = "setup_complete"
         const val KEY_COLOR_THEME = "color_theme"
+        const val KEY_SGDB_KEY = "steamgriddb_key"
+        const val KEY_SGDB_REPLACE_ALL = "steamgriddb_replace_all"
         private const val TAG = "LH.Config"
     }
 }
