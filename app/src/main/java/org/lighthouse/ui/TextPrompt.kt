@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
@@ -79,31 +80,40 @@ fun TextPromptOverlay(
                     Text(it, color = theme.textSecondary, fontSize = 12.sp)
                 }
                 Spacer(Modifier.height(10.dp))
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(theme.surfaceVariant)
-                        .padding(horizontal = 12.dp, vertical = 12.dp),
-                ) {
-                    val at = textCursor.coerceIn(0, text.length)
-                    Text(
-                        text.substring(0, at),
-                        color = theme.textPrimary, fontSize = 16.sp,
-                        fontFamily = FontFamily.Monospace,
-                    )
-                    // A static caret rather than a blinking one: this is not a
-                    // real text field with IME focus, and pretending it is
-                    // would invite tapping it expecting the system keyboard.
-                    // It sits at the actual cursor - L1/R1 move it - not
-                    // always at the end.
-                    Text("│", color = theme.primary, fontSize = 16.sp, fontFamily = FontFamily.Monospace)
-                    Text(
-                        text.substring(at),
-                        color = theme.textPrimary, fontSize = 16.sp,
-                        fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.weight(1f),
-                    )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Badges sit right on the field they move, rather than in
+                    // a caption at the bottom of the whole panel - the same
+                    // reason the home screen puts its L1/R1 chips at the edges
+                    // of the row they page, not in a legend somewhere else.
+                    CursorBumper("L1")
+                    Spacer(Modifier.width(8.dp))
+                    Row(
+                        Modifier
+                            .weight(1f)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(theme.surfaceVariant)
+                            .padding(horizontal = 12.dp, vertical = 12.dp),
+                    ) {
+                        val at = textCursor.coerceIn(0, text.length)
+                        Text(
+                            text.substring(0, at),
+                            color = theme.textPrimary, fontSize = 16.sp,
+                            fontFamily = FontFamily.Monospace,
+                        )
+                        // A static caret rather than a blinking one: this is not
+                        // a real text field with IME focus, and pretending it is
+                        // would invite tapping it expecting the system keyboard.
+                        // It sits at the actual cursor, not always at the end.
+                        Text("│", color = theme.primary, fontSize = 16.sp, fontFamily = FontFamily.Monospace)
+                        Text(
+                            text.substring(at),
+                            color = theme.textPrimary, fontSize = 16.sp,
+                            fontFamily = FontFamily.Monospace,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    CursorBumper("R1")
                 }
             }
             KeyboardPanel(
@@ -122,11 +132,29 @@ fun TextPromptOverlay(
                 PadHint("B", "Cancel", onCancel)
                 Spacer(Modifier.weight(1f))
                 Text(
-                    "D-pad to move · A to press a key · L1/R1 to move the cursor",
+                    "D-pad to move · A to press a key",
                     color = theme.textSecondary, fontSize = 12.sp,
                 )
             }
         }
+    }
+}
+
+/** Decorative, not a touch target - L1/R1 are shoulder buttons, nothing to
+ *  tap on screen. Same solid-circle shape as the home screen's system-paging
+ *  chips, so the two "these bumpers move something sideways" ideas read the
+ *  same way everywhere in the app. */
+@Composable
+private fun CursorBumper(label: String) {
+    val theme = LocalTheme.current
+    Box(
+        Modifier
+            .size(28.dp)
+            .clip(CircleShape)
+            .background(theme.primary),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, color = theme.background, fontSize = 11.sp, fontWeight = FontWeight.Bold)
     }
 }
 
