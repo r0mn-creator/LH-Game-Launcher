@@ -41,32 +41,53 @@ sealed interface Key {
     data object Space : Key
     data object Symbols : Key
     data object Done : Key
+    /** Whole-buffer clipboard ops - there is no cursor/selection model here,
+     *  so Copy takes the entire field and Paste appends to its end, same as
+     *  every other key. Handled outside [applyKey] - both need a Context. */
+    data object Copy : Key
+    data object Paste : Key
 }
 
 /** Rows are independent lengths on purpose - a keyboard is not a uniform grid. */
 private val LETTER_ROWS: List<List<Key>> = listOf(
     "qwertyuiop".map { Key.Letter(it) },
     "asdfghjkl".map { Key.Letter(it) },
-    listOf(Key.Shift) + "zxcvbnm".map { Key.Letter(it) } + listOf(Key.Backspace),
-    listOf(Key.Symbols, Key.Space, Key.Done),
+    listOf(Key.Shift) + "zxcvbnm".map { Key.Letter(it) } + listOf(Key.Copy, Key.Backspace),
+    listOf(Key.Symbols, Key.Paste, Key.Space, Key.Done),
 )
 
 private val SYMBOL_ROWS: List<List<Key>> = listOf(
     "1234567890".map { Key.Letter(it) },
     "-:;'\"(),.!".map { Key.Letter(it) },
-    listOf(Key.Shift) + "&_/@#\$%*+?".map { Key.Letter(it) } + listOf(Key.Backspace),
-    listOf(Key.Symbols, Key.Space, Key.Done),
+    listOf(Key.Shift) + "&_/@#\$%*+?".map { Key.Letter(it) } + listOf(Key.Copy, Key.Backspace),
+    listOf(Key.Symbols, Key.Paste, Key.Space, Key.Done),
 )
 
 fun keyboardRows(symbols: Boolean): List<List<Key>> = if (symbols) SYMBOL_ROWS else LETTER_ROWS
 
-/** What pressing a key does to the buffer. Pure, so it is trivial to test. */
-fun applyKey(key: Key, text: String, shift: Boolean): String = when (key) {
-    is Key.Letter -> text + if (shift) key.lower.uppercaseChar() else key.lower
-    Key.Space -> text + " "
-    Key.Backspace -> text.dropLast(1)
-    Key.Shift, Key.Symbols, Key.Done -> text
+/**
+ * What pressing a key does to the buffer, at the cursor rather than always
+ * the end - a real text field lets you fix a typo in the middle without
+ * retyping the tail. Pure, so it is trivial to test. Copy/Paste touch the
+ * clipboard and are handled by the caller instead.
+ */
+fun applyKey(key: Key, text: String, cursor: Int, shift: Boolean): Pair<String, Int> = when (key) {
+    is Key.Letter -> {
+        val ch = if (shift) key.lower.uppercaseChar() else key.lower
+        (text.substring(0, cursor) + ch + text.substring(cursor)) to (cursor + 1)
+    }
+    Key.Space -> (text.substring(0, cursor) + " " + text.substring(cursor)) to (cursor + 1)
+    Key.Backspace -> if (cursor > 0) {
+        (text.substring(0, cursor - 1) + text.substring(cursor)) to (cursor - 1)
+    } else {
+        text to cursor
+    }
+    Key.Shift, Key.Symbols, Key.Done, Key.Copy, Key.Paste -> text to cursor
 }
+
+/** Inserts at the cursor rather than always appending - used by Paste. */
+fun insertAt(text: String, cursor: Int, insert: String): Pair<String, Int> =
+    (text.substring(0, cursor) + insert + text.substring(cursor)) to (cursor + insert.length)
 
 @Composable
 fun KeyboardPanel(
@@ -99,9 +120,9 @@ fun KeyboardPanel(
 }
 
 private fun weightOf(key: Key): Float = when (key) {
-    Key.Space -> 5f
-    Key.Done, Key.Symbols -> 2f
-    Key.Shift, Key.Backspace -> 1.5f
+    Key.Space -> 4f
+    Key.Done, Key.Symbols, Key.Paste -> 2f
+    Key.Shift, Key.Backspace, Key.Copy -> 1.5f
     else -> 1f
 }
 
@@ -112,6 +133,8 @@ private fun labelOf(key: Key, shift: Boolean, symbols: Boolean): String = when (
     Key.Space -> "space"
     Key.Symbols -> if (symbols) "ABC" else "123"
     Key.Done -> "Done"
+    Key.Copy -> "Copy"
+    Key.Paste -> "Paste"
 }
 
 /** A RowScope extension so `Modifier.weight` - which only exists on that

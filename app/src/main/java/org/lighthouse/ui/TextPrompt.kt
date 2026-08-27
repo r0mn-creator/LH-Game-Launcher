@@ -6,6 +6,7 @@ package org.lighthouse.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -39,6 +40,7 @@ fun TextPromptOverlay(
     title: String,
     hint: String?,
     text: String,
+    textCursor: Int,
     symbols: Boolean,
     shift: Boolean,
     cursorRow: Int,
@@ -47,11 +49,17 @@ fun TextPromptOverlay(
     onCancel: () -> Unit,
 ) {
     val theme = LocalTheme.current
+    val noRipple = remember { MutableInteractionSource() }
 
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.72f)),
+            .background(Color.Black.copy(alpha = 0.72f))
+            // A plain background() is invisible to touch - without a consumer
+            // here, a tap anywhere on the scrim (including over the text
+            // preview, which has none of its own) falls straight through to
+            // whatever is underneath, e.g. the settings row that opened this.
+            .clickable(interactionSource = noRipple, indication = null) {},
     ) {
         // Anchored to the bottom, not centred: this is meant to read as a
         // keyboard panel sliding up from the edge of the screen, the same
@@ -78,16 +86,24 @@ fun TextPromptOverlay(
                         .background(theme.surfaceVariant)
                         .padding(horizontal = 12.dp, vertical = 12.dp),
                 ) {
+                    val at = textCursor.coerceIn(0, text.length)
                     Text(
-                        text.ifEmpty { " " },
+                        text.substring(0, at),
                         color = theme.textPrimary, fontSize = 16.sp,
                         fontFamily = FontFamily.Monospace,
-                        modifier = Modifier.weight(1f),
                     )
                     // A static caret rather than a blinking one: this is not a
                     // real text field with IME focus, and pretending it is
                     // would invite tapping it expecting the system keyboard.
+                    // It sits at the actual cursor - L1/R1 move it - not
+                    // always at the end.
                     Text("│", color = theme.primary, fontSize = 16.sp, fontFamily = FontFamily.Monospace)
+                    Text(
+                        text.substring(at),
+                        color = theme.textPrimary, fontSize = 16.sp,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
             }
             KeyboardPanel(
@@ -105,7 +121,10 @@ fun TextPromptOverlay(
             ) {
                 PadHint("B", "Cancel", onCancel)
                 Spacer(Modifier.weight(1f))
-                Text("D-pad to move · A to press a key", color = theme.textSecondary, fontSize = 12.sp)
+                Text(
+                    "D-pad to move · A to press a key · L1/R1 to move the cursor",
+                    color = theme.textSecondary, fontSize = 12.sp,
+                )
             }
         }
     }

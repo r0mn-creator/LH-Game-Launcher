@@ -3,6 +3,8 @@
 
 package org.lighthouse.ui
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.LauncherApps
 import android.net.Uri
@@ -95,6 +97,9 @@ class MainActivity : ComponentActivity() {
     private var promptApply: ((String) -> Unit)? = null
     /** The on-screen keyboard's own state - this app draws its own, see OnScreenKeyboard.kt. */
     private var promptText by mutableStateOf("")
+    /** Index into [promptText] - typing, backspace and paste all act here,
+     *  not always at the end, so this is a real cursor, not a fiction. */
+    private var promptCursor by mutableStateOf(0)
     private var promptSymbols by mutableStateOf(false)
     private var promptShift by mutableStateOf(false)
     private var kbRow by mutableStateOf(0)
@@ -297,7 +302,7 @@ class MainActivity : ComponentActivity() {
                 // triggered from wherever a plain string needs typing.
                 prompt?.let { (t, h, _) ->
                     TextPromptOverlay(
-                        title = t, hint = h, text = promptText,
+                        title = t, hint = h, text = promptText, textCursor = promptCursor,
                         symbols = promptSymbols, shift = promptShift,
                         cursorRow = kbRow, cursorCol = kbCol,
                         onKeyTap = { r, c -> kbRow = r; kbCol = c; pressKey() },
@@ -447,11 +452,18 @@ class MainActivity : ComponentActivity() {
     private fun handle(nav: Nav) {
         val page = pages.getOrNull(systemIndex)
         when (nav) {
-            Nav.PREV_SYSTEM -> if (pages.isNotEmpty()) {
+            // L1/R1 double as the text cursor while a prompt is open - there is
+            // no system tab visible to page through underneath it, and a d-pad
+            // row is already spoken for by the keyboard grid itself.
+            Nav.PREV_SYSTEM -> if (prompt != null) {
+                promptCursor = (promptCursor - 1).coerceAtLeast(0)
+            } else if (pages.isNotEmpty()) {
                 systemIndex = (systemIndex - 1 + pages.size) % pages.size
                 cursor = cursor.copy(index = 0)
             }
-            Nav.NEXT_SYSTEM -> if (pages.isNotEmpty()) {
+            Nav.NEXT_SYSTEM -> if (prompt != null) {
+                promptCursor = (promptCursor + 1).coerceAtMost(promptText.length)
+            } else if (pages.isNotEmpty()) {
                 systemIndex = (systemIndex + 1) % pages.size
                 cursor = cursor.copy(index = 0)
             }
@@ -1368,14 +1380,36 @@ class MainActivity : ComponentActivity() {
             // wrong key as the right one.
             Key.Symbols -> { promptSymbols = !promptSymbols; kbRow = 0; kbCol = 0 }
             Key.Done -> { promptApply?.invoke(promptText.trim()); prompt = null }
-            else -> promptText = applyKey(key, promptText, promptShift)
+            Key.Copy -> {
+                clipboard.setPrimaryClip(ClipData.newPlainText("LightHouse", promptText))
+                toast("Copied")
+            }
+            Key.Paste -> {
+                val pasted = clipboard.primaryClip
+                    ?.takeIf { it.itemCount > 0 }
+                    ?.getItemAt(0)?.coerceToText(this)?.toString()
+                if (pasted.isNullOrEmpty()) {
+                    toast("Clipboard is empty")
+                } else {
+                    val (t, c) = insertAt(promptText, promptCursor, pasted)
+                    promptText = t; promptCursor = c
+                }
+            }
+            else -> {
+                val (t, c) = applyKey(key, promptText, promptCursor, promptShift)
+                promptText = t; promptCursor = c
+            }
         }
     }
+
+    private val clipboard: ClipboardManager
+        get() = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
 
     private fun askText(title: String, hint: String?, current: String, apply: (String) -> Unit) {
         promptApply = apply
         prompt = Triple(title, hint, current)
         promptText = current
+        promptCursor = current.length
         promptSymbols = false
         promptShift = false
         kbRow = 0
