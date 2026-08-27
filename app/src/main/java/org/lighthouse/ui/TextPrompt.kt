@@ -55,7 +55,7 @@ fun TextPromptOverlay(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.72f))
+            .background(Color.Black.copy(alpha = 0.55f))
             // A plain background() is invisible to touch - without a consumer
             // here, a tap anywhere on the scrim (including over the text
             // preview, which has none of its own) falls straight through to
@@ -66,12 +66,18 @@ fun TextPromptOverlay(
         // keyboard panel sliding up from the edge of the screen, the same
         // shape a console's own on-screen keyboard takes, with the field it
         // fills pushed up to sit right above the keys as they appear.
+        //
+        // The panel itself is only slightly opaque - the game grid or
+        // settings list stays faintly visible through the gaps between keys,
+        // so typing doesn't feel like it walls off the whole screen. Keys,
+        // the text field and every badge paint their own solid background on
+        // top of this, so none of THEM go see-through - only the panel does.
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
-                .background(theme.surface)
+                .background(theme.surface.copy(alpha = 0.90f))
         ) {
             Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 18.dp, bottom = 6.dp)) {
                 Text(title, color = theme.textPrimary, fontSize = 16.sp, fontWeight = FontWeight.Bold)

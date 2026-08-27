@@ -20,6 +20,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -156,10 +157,13 @@ private fun RowScope.KeyCap(
             .height(46.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(
+                // Baked with lerp rather than alpha, so these stay fully
+                // solid keys even though the panel behind them is now
+                // slightly see-through - only the panel is meant to be.
                 when {
-                    focused -> theme.primary.copy(alpha = 0.85f)
-                    active -> theme.primary.copy(alpha = 0.35f)
-                    key == Key.Done -> theme.primary.copy(alpha = 0.18f)
+                    focused -> lerp(theme.surfaceVariant, theme.primary, 0.85f)
+                    active -> lerp(theme.surfaceVariant, theme.primary, 0.35f)
+                    key == Key.Done -> lerp(theme.surfaceVariant, theme.primary, 0.18f)
                     else -> theme.surfaceVariant
                 }
             )
